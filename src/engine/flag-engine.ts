@@ -2,6 +2,7 @@ import type { Flag, FlagCategory, FlagSeverity } from '@/types/flag.ts';
 import type { Person } from '@/types/person.ts';
 import type { Edge } from '@/types/edge.ts';
 import type { TreeGraph } from '@/graph/tree-graph.ts';
+import { detectAncestryConflicts } from '@/engine/ancestry-conflict-detector.ts';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -441,6 +442,86 @@ function checkUnresolvedParentage(graph: TreeGraph): Flag[] {
   return flags;
 }
 
+function checkAncestryConflicts(graph: TreeGraph): Flag[] {
+  const flags: Flag[] = [];
+  const conflicts = detectAncestryConflicts(graph);
+
+  for (const conflict of conflicts) {
+    const personA = graph.persons.get(conflict.personIdA);
+    const personB = graph.persons.get(conflict.personIdB);
+    const nameA = personA?.name.full ?? conflict.personIdA;
+    const nameB = personB?.name.full ?? conflict.personIdB;
+
+    const affectedPersonIds = [conflict.personIdA, conflict.personIdB];
+    // Collect affected edge IDs from both versions
+    const affectedEdgeIds: string[] = [];
+    const addEdgesForPerson = (personId: string) => {
+      const edges = graph.parentEdges.get(personId);
+      if (edges) {
+        for (const edge of edges) {
+          affectedEdgeIds.push(edge.id);
+        }
+      }
+    };
+    addEdgesForPerson(conflict.personIdA);
+    addEdgesForPerson(conflict.personIdB);
+
+    switch (conflict.conflictType) {
+      case 'different_parents':
+        flags.push(createFlag(
+          'ancestry_conflict', 'critical', 'ANCESTRY_CONFLICT_DIFFERENT_PARENTS',
+          `Conflicting parents: ${nameA} / ${nameB}`,
+          `"${nameA}" and "${nameB}" appear to be the same person but have completely different parents. ` +
+          `Version A: ${conflict.pathA.fatherName ?? '?'} & ${conflict.pathA.motherName ?? '?'}. ` +
+          `Version B: ${conflict.pathB.fatherName ?? '?'} & ${conflict.pathB.motherName ?? '?'}. ` +
+          `${conflict.sharedDescendants.length} shared descendants affected.`,
+          'Compare both parent sets against primary sources. Use AI-assisted research to determine which lineage is correct.',
+          affectedPersonIds,
+          affectedEdgeIds,
+        ));
+        break;
+
+      case 'different_father':
+      case 'different_mother':
+        flags.push(createFlag(
+          'ancestry_conflict', 'critical', 'ANCESTRY_CONFLICT_DIFFERENT_PARENTS',
+          `Different ${conflict.conflictType === 'different_father' ? 'father' : 'mother'}: ${nameA} / ${nameB}`,
+          `"${nameA}" and "${nameB}" share one parent but differ on the ${conflict.conflictType === 'different_father' ? 'father' : 'mother'}. ` +
+          `${conflict.sharedDescendants.length} shared descendants affected.`,
+          'Research which parent assignment is correct using vital records.',
+          affectedPersonIds,
+          affectedEdgeIds,
+        ));
+        break;
+
+      case 'upstream_divergence':
+        flags.push(createFlag(
+          'ancestry_conflict', 'warning', 'ANCESTRY_CONFLICT_UPSTREAM_DIVERGENCE',
+          `Upstream divergence: ${nameA}`,
+          `"${nameA}" and "${nameB}" have the same immediate parents, but those parents have conflicting ancestry upstream.`,
+          'Check the parents and grandparents for duplicate entries or conflicting parent assignments.',
+          affectedPersonIds,
+          affectedEdgeIds,
+        ));
+        break;
+
+      case 'additional_parents':
+        flags.push(createFlag(
+          'ancestry_conflict', 'warning', 'ANCESTRY_CONFLICT_PARTIAL',
+          `Partial parent data: ${nameA} / ${nameB}`,
+          `"${nameA}" and "${nameB}" appear to be the same person. One has parent data, the other doesn't. ` +
+          `This may indicate incomplete merging of records.`,
+          'Merge the two entries, keeping the one with parent data as primary.',
+          affectedPersonIds,
+          affectedEdgeIds,
+        ));
+        break;
+    }
+  }
+
+  return flags;
+}
+
 // ── Main entry point ─────────────────────────────────────────────────
 
 export function runFlagEngine(graph: TreeGraph): Flag[] {
@@ -452,6 +533,7 @@ export function runFlagEngine(graph: TreeGraph): Flag[] {
   flags.push(...checkSourceDeserts(graph));
   flags.push(...checkStructural(graph));
   flags.push(...checkUnresolvedParentage(graph));
+  flags.push(...checkAncestryConflicts(graph));
 
   return flags;
 }

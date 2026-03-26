@@ -6,7 +6,8 @@ export type FlagCategory =
   | "source_desert"
   | "structural"
   | "unresolved_parentage"
-  | "data_quality";
+  | "data_quality"
+  | "ancestry_conflict";
 
 export type FlagSeverity = "critical" | "warning" | "info";
 

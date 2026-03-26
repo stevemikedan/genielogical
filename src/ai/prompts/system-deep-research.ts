@@ -148,5 +148,7 @@ function describeTask(task: DeepResearchTask): string {
       return 'Resolve conflicting or impossible dates for this person.';
     case 'verify_title':
       return 'Verify whether this person actually held their claimed title or honorific.';
+    case 'resolve_ancestry_conflict':
+      return 'Resolve a conflict where two entries for the same person have different parents assigned.';
   }
 }
