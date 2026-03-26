@@ -184,7 +184,8 @@ export type DeepResearchTaskType =
   | 'find_parents'
   | 'resolve_duplicate'
   | 'resolve_date_conflict'
-  | 'verify_title';
+  | 'verify_title'
+  | 'resolve_ancestry_conflict';
 
 export interface DeepResearchTask {
   type: DeepResearchTaskType;
