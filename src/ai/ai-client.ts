@@ -1,4 +1,4 @@
-import type { LLMResponse } from './provider/types.ts';
+import type { LLMMessage, LLMResponse } from './provider/types.ts';
 import {
   getLegacyApiKey,
   setLegacyApiKey,
@@ -154,6 +154,60 @@ export async function sendWithProvider(
     systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
     maxTokens: options?.maxTokens ?? 2048,
+    tools,
+  });
+}
+
+// ── Multi-turn Conversation API ──────────────────────────────────────
+
+/**
+ * Send a multi-turn conversation without tools.
+ * Uses the provider configured for the given task.
+ */
+export async function sendConversation(
+  task: 'quickCheck' | 'validation' | 'deepResearch' | 'chat',
+  systemPrompt: string,
+  messages: LLMMessage[],
+  options?: { maxTokens?: number },
+): Promise<LLMResponse | null> {
+  const provider = getProvider(task);
+  if (!provider) return null;
+
+  return provider.sendMessage({
+    systemPrompt,
+    messages,
+    maxTokens: options?.maxTokens ?? 2048,
+  });
+}
+
+/**
+ * Send a multi-turn conversation with web search enabled.
+ * Uses the provider configured for the given task.
+ */
+export async function sendSearchConversation(
+  task: 'quickCheck' | 'validation' | 'deepResearch' | 'chat',
+  systemPrompt: string,
+  messages: LLMMessage[],
+  options?: {
+    maxTokens?: number;
+    maxSearches?: number;
+    maxFetches?: number;
+  },
+): Promise<LLMResponse | null> {
+  const provider = getProvider(task);
+  if (!provider) return null;
+
+  const tools = provider.capabilities.webSearch
+    ? [
+        { type: 'web_search', name: 'web_search', config: { maxSearches: options?.maxSearches ?? 8 } },
+        { type: 'web_fetch', name: 'web_fetch', config: { maxFetches: options?.maxFetches ?? 5 } },
+      ]
+    : undefined;
+
+  return provider.sendMessage({
+    systemPrompt,
+    messages,
+    maxTokens: options?.maxTokens ?? 4096,
     tools,
   });
 }
