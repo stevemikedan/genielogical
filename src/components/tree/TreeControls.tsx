@@ -2,8 +2,9 @@ import { useState, useMemo } from 'react';
 import type { ConfidenceTier } from '@/types/common.ts';
 import type { TreeGraph } from '@/graph/tree-graph.ts';
 import { TIER_LABELS, TIER_COLORS } from '@/types/tier-labels.ts';
+import type { FanMode } from './fan-chart-layout.ts';
 
-export type ViewMode = 'pedigree' | 'descendant' | 'directLine' | 'pedigreeGrid';
+export type ViewMode = 'pedigree' | 'descendant' | 'directLine' | 'pedigreeGrid' | 'fan' | 'lineagePath';
 export type TreeOrientation = 'horizontal' | 'vertical-down' | 'vertical-up';
 export type TreeDensity = 'compact' | 'comfortable' | 'spacious';
 
@@ -37,6 +38,8 @@ interface TreeControlsProps {
   onDensityChange: (density: TreeDensity) => void;
   orientation: TreeOrientation;
   onOrientationChange: (orientation: TreeOrientation) => void;
+  fanMode: FanMode;
+  onFanModeChange: (mode: FanMode) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFitToView: () => void;
@@ -48,6 +51,8 @@ const VIEW_MODE_LABELS: Record<ViewMode, string> = {
   descendant: 'Descendants',
   directLine: 'Direct Line',
   pedigreeGrid: 'Grid',
+  fan: 'Fan',
+  lineagePath: 'Path',
 };
 
 const DENSITY_LABELS: Record<TreeDensity, string> = {
@@ -72,6 +77,8 @@ export function TreeControls({
   onDensityChange,
   orientation,
   onOrientationChange,
+  fanMode,
+  onFanModeChange,
   onZoomIn,
   onZoomOut,
   onFitToView,
@@ -140,7 +147,7 @@ export function TreeControls({
 
       {/* View mode */}
       <div className="flex rounded overflow-hidden border border-border">
-        {(['pedigree', 'descendant', 'directLine', 'pedigreeGrid'] as const).map(mode => (
+        {(['pedigree', 'descendant', 'directLine', 'pedigreeGrid', 'fan', 'lineagePath'] as const).map(mode => (
           <button
             key={mode}
             type="button"
@@ -200,8 +207,32 @@ export function TreeControls({
         ))}
       </div>
 
-      {/* Orientation toggle (hidden for pedigreeGrid — always horizontal) */}
-      {viewMode !== 'pedigreeGrid' && (
+      {/* Fan mode toggle (semi/full — only visible in fan view) */}
+      {viewMode === 'fan' && (
+        <div className="flex rounded overflow-hidden border border-border">
+          {([
+            { key: 'semi' as const, label: '\u25D1', title: 'Semicircle' },
+            { key: 'full' as const, label: '\u25CB', title: 'Full circle' },
+          ]).map(opt => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => onFanModeChange(opt.key)}
+              className={`px-2 py-1 text-xs font-medium transition-colors ${
+                fanMode === opt.key
+                  ? 'bg-gold text-bg'
+                  : 'bg-surface text-text-secondary hover:text-text-primary'
+              }`}
+              title={opt.title}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Orientation toggle (hidden for pedigreeGrid, fan, lineagePath) */}
+      {viewMode !== 'pedigreeGrid' && viewMode !== 'fan' && viewMode !== 'lineagePath' && (
         <div className="flex rounded overflow-hidden border border-border">
           {([
             { key: 'horizontal' as const, label: '\u2194', title: 'Horizontal (left-to-right)' },
