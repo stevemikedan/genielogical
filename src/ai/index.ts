@@ -1,5 +1,5 @@
-export { getApiKey, setApiKey, clearApiKey, testApiKey, createClient, sendMessage } from './ai-client.ts';
-export type { AIResponse } from './ai-client.ts';
+export { getApiKey, setApiKey, clearApiKey, testApiKey, sendMessage, sendAgentSearchMessage, sendWithProvider } from './ai-client.ts';
+export type { AIResponse, AgentSearchResponse, WebCitation } from './ai-client.ts';
 export {
   buildPersonValidationPrompt,
   parsePersonValidation,

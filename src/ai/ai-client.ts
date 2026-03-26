@@ -1,72 +1,41 @@
-import Anthropic from '@anthropic-ai/sdk';
+import type { LLMResponse } from './provider/types.ts';
+import {
+  getLegacyApiKey,
+  setLegacyApiKey,
+  clearLegacyApiKey,
+  getProvider,
+} from './provider/provider-registry.ts';
+import { AnthropicProvider } from './provider/anthropic-provider.ts';
 
-const API_KEY_STORAGE_KEY = 'genielogical_anthropic_api_key';
+// ── API Key Management (legacy convenience wrappers) ─────────────────
+// These delegate to the provider registry but keep the same API
+// so existing UI components don't need to change yet.
 
 export function getApiKey(): string | null {
-  return localStorage.getItem(API_KEY_STORAGE_KEY);
+  return getLegacyApiKey();
 }
 
 export function setApiKey(key: string): void {
-  localStorage.setItem(API_KEY_STORAGE_KEY, key);
+  setLegacyApiKey(key);
 }
 
 export function clearApiKey(): void {
-  localStorage.removeItem(API_KEY_STORAGE_KEY);
-}
-
-export function createClient(apiKey: string): Anthropic {
-  return new Anthropic({
-    apiKey,
-    dangerouslyAllowBrowser: true,
-  });
+  clearLegacyApiKey();
 }
 
 export async function testApiKey(key: string): Promise<boolean> {
-  try {
-    const client = createClient(key);
-    await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 10,
-      messages: [{ role: 'user', content: 'Reply with "ok".' }],
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  const provider = new AnthropicProvider(key);
+  const result = await provider.testConnection();
+  return result.ok;
 }
+
+// ── Response Types (kept for backwards compat) ───────────────────────
 
 export interface AIResponse {
   text: string;
   inputTokens: number;
   outputTokens: number;
 }
-
-export async function sendMessage(
-  apiKey: string,
-  systemPrompt: string,
-  userPrompt: string,
-): Promise<AIResponse> {
-  const client = createClient(apiKey);
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 2048,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
-
-  const text = response.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map(block => block.text)
-    .join('');
-
-  return {
-    text,
-    inputTokens: response.usage.input_tokens,
-    outputTokens: response.usage.output_tokens,
-  };
-}
-
-// ── Web Search Citation ───────────────────────────────────────────
 
 export interface WebCitation {
   url: string;
@@ -81,12 +50,31 @@ export interface AgentSearchResponse {
   outputTokens: number;
 }
 
+// ── Message Sending (delegating to provider) ─────────────────────────
+
 /**
- * Send a message with web search enabled via Anthropic's server-side
- * web_search tool. Claude will autonomously search the web for records
- * and return results with citations.
- *
- * The search happens entirely server-side — no CORS issues.
+ * Send a single-turn message. Delegates to the provider registry.
+ */
+export async function sendMessage(
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+): Promise<AIResponse> {
+  const provider = new AnthropicProvider(apiKey);
+
+  const response = await provider.sendMessage({
+    systemPrompt,
+    messages: [{ role: 'user', content: userPrompt }],
+    maxTokens: 2048,
+  });
+
+  return llmResponseToAIResponse(response);
+}
+
+/**
+ * Send a message with web search enabled.
+ * Delegates to the provider — if provider supports web search, it's used
+ * natively. Otherwise falls back to knowledge-only mode.
  */
 export async function sendAgentSearchMessage(
   apiKey: string,
@@ -98,58 +86,84 @@ export async function sendAgentSearchMessage(
     allowedDomains?: string[];
   },
 ): Promise<AgentSearchResponse> {
-  const client = createClient(apiKey);
+  const provider = new AnthropicProvider(apiKey);
 
-  const webSearchTool: Anthropic.Messages.WebSearchTool20250305 = {
-    type: 'web_search_20250305',
-    name: 'web_search',
-    max_uses: options?.maxSearches ?? 8,
-    ...(options?.allowedDomains ? { allowed_domains: options.allowedDomains } : {}),
-  };
-
-  const webFetchTool: Anthropic.Messages.WebFetchTool20250910 = {
-    type: 'web_fetch_20250910',
-    name: 'web_fetch',
-    max_uses: options?.maxFetches ?? 5,
-  };
-
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
-    system: systemPrompt,
+  const response = await provider.sendMessage({
+    systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
-    tools: [webSearchTool, webFetchTool],
+    maxTokens: 4096,
+    tools: [
+      {
+        type: 'web_search',
+        name: 'web_search',
+        config: {
+          maxSearches: options?.maxSearches ?? 8,
+          allowedDomains: options?.allowedDomains,
+        },
+      },
+      {
+        type: 'web_fetch',
+        name: 'web_fetch',
+        config: {
+          maxFetches: options?.maxFetches ?? 5,
+        },
+      },
+    ],
   });
 
-  // Extract text blocks and their citations
-  const textBlocks = response.content.filter(
-    (block): block is Anthropic.TextBlock => block.type === 'text',
-  );
-
-  const text = textBlocks.map(b => b.text).join('');
-
-  // Extract web search citations from text blocks
-  const citations: WebCitation[] = [];
-  const seenUrls = new Set<string>();
-
-  for (const block of textBlocks) {
-    if (!block.citations) continue;
-    for (const cite of block.citations) {
-      if (cite.type === 'web_search_result_location' && !seenUrls.has(cite.url)) {
-        seenUrls.add(cite.url);
-        citations.push({
-          url: cite.url,
-          title: cite.title,
-          citedText: cite.cited_text,
-        });
-      }
-    }
-  }
-
   return {
-    text,
-    citations,
-    inputTokens: response.usage.input_tokens,
-    outputTokens: response.usage.output_tokens,
+    text: response.content,
+    citations: response.citations.map(c => ({
+      url: c.url,
+      title: c.title,
+      citedText: c.citedText,
+    })),
+    inputTokens: response.usage.inputTokens,
+    outputTokens: response.usage.outputTokens,
+  };
+}
+
+// ── Provider-aware API ───────────────────────────────────────────────
+
+/**
+ * Send a message using the provider configured for the given task type.
+ * Returns null if no provider is configured for that task.
+ */
+export async function sendWithProvider(
+  task: 'quickCheck' | 'validation' | 'deepResearch' | 'chat',
+  systemPrompt: string,
+  userPrompt: string,
+  options?: {
+    maxTokens?: number;
+    webSearch?: boolean;
+    maxSearches?: number;
+    maxFetches?: number;
+  },
+): Promise<LLMResponse | null> {
+  const provider = getProvider(task);
+  if (!provider) return null;
+
+  const tools = options?.webSearch && provider.capabilities.webSearch
+    ? [
+        { type: 'web_search', name: 'web_search', config: { maxSearches: options.maxSearches ?? 8 } },
+        { type: 'web_fetch', name: 'web_fetch', config: { maxFetches: options.maxFetches ?? 5 } },
+      ]
+    : undefined;
+
+  return provider.sendMessage({
+    systemPrompt,
+    messages: [{ role: 'user', content: userPrompt }],
+    maxTokens: options?.maxTokens ?? 2048,
+    tools,
+  });
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+function llmResponseToAIResponse(response: LLMResponse): AIResponse {
+  return {
+    text: response.content,
+    inputTokens: response.usage.inputTokens,
+    outputTokens: response.usage.outputTokens,
   };
 }
