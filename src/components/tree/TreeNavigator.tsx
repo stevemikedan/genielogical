@@ -294,7 +294,7 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
       return;
     }
     if (!svgRef.current || !zoomRef.current) return;
-    d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1.3);
+    d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1.2);
   }, [viewMode]);
 
   const handleZoomOut = useCallback(() => {
@@ -303,7 +303,7 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
       return;
     }
     if (!svgRef.current || !zoomRef.current) return;
-    d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 0.7);
+    d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1 / 1.2);
   }, [viewMode]);
 
   const handleFitToView = useCallback(() => {
@@ -322,6 +322,48 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
 
     d3.select(svg).transition().duration(500).call(zoomRef.current.transform, t);
   }, [viewMode, layoutData, orientation]);
+
+  const handleCenterOnSelected = useCallback(() => {
+    if (viewMode === 'pedigreeGrid') {
+      gridViewRef.current?.centerOnSelected();
+      return;
+    }
+    if (!svgRef.current || !zoomRef.current || !layoutData) return;
+    if (!selectedPersonId) {
+      handleFitToView();
+      return;
+    }
+    const node = layoutData.descendants().find(n => n.data.person.id === selectedPersonId);
+    if (!node) {
+      handleFitToView();
+      return;
+    }
+    const svg = svgRef.current;
+    const width = svg.clientWidth || 800;
+    const height = svg.clientHeight || 600;
+    const { sx, sy } = toSvg(node.x, node.y, orientation);
+    const scale = Math.min(transform.k, 1);
+    const t = d3.zoomIdentity
+      .translate(width / 2 - sx * scale, height / 2 - sy * scale)
+      .scale(scale);
+    d3.select(svg).transition().duration(400).call(zoomRef.current.transform, t);
+  }, [viewMode, selectedPersonId, layoutData, orientation, transform.k, handleFitToView]);
+
+  // Keyboard shortcuts for zoom
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      // Skip if user is typing in an input
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if (e.key === '=' || e.key === '+') { handleZoomIn(); e.preventDefault(); }
+      else if (e.key === '-') { handleZoomOut(); e.preventDefault(); }
+      else if (e.key === '0') { handleFitToView(); e.preventDefault(); }
+      else if (e.key === 'c' && !e.ctrlKey && !e.metaKey) { handleCenterOnSelected(); e.preventDefault(); }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleZoomIn, handleZoomOut, handleFitToView, handleCenterOnSelected]);
 
   const handleMinimapNavigate = useCallback((x: number, y: number) => {
     if (!svgRef.current || !zoomRef.current) return;
@@ -491,6 +533,7 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onFitToView={handleFitToView}
+        onCenterOnSelected={handleCenterOnSelected}
       />
 
       <div className="relative border border-border rounded-lg overflow-hidden" style={{ height: '70vh' }}>

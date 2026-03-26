@@ -14,6 +14,7 @@ import { AIEnrichSection } from './AIEnrichSection.tsx';
 import { ResearchStepsSection } from './ResearchStepsSection.tsx';
 import { WorkspaceContext } from '@/context/workspace-context.tsx';
 import { CrossTreeLinkModal } from '@/components/layout/CrossTreeLinkModal.tsx';
+import { formatDisplayName } from '@/utils/name-display.ts';
 
 export function PersonDetailPanel() {
   const { state, dispatch } = useTree();
@@ -83,7 +84,7 @@ export function PersonDetailPanel() {
         {/* Header */}
         <div className="sticky top-0 bg-surface border-b border-border px-4 py-3 flex items-center justify-between z-10">
           <h2 className="font-[family-name:var(--font-heading)] text-lg text-text-primary truncate pr-2">
-            {detail.person.name.full}
+            {formatDisplayName(detail.person.name)}
           </h2>
           <button
             type="button"

@@ -4,6 +4,7 @@ import type { TreeHierarchyNode } from './tree-data-adapter.ts';
 import type { TreeOrientation } from './TreeControls.tsx';
 import { TIER_COLORS } from '@/types/tier-labels.ts';
 import type { ConfidenceTier } from '@/types/common.ts';
+import { formatDisplayName } from '@/utils/name-display.ts';
 
 export type DetailLevel = 'full' | 'abbreviated' | 'dot';
 
@@ -164,7 +165,7 @@ export const TreeNode = memo(function TreeNode({
           fontSize={11}
           fontFamily="'EB Garamond', Georgia, serif"
         >
-          {truncateName(person.name.full, 18)}
+          {truncateName(formatDisplayName(person.name), 18)}
         </text>
       </g>
     );
@@ -283,7 +284,7 @@ export const TreeNode = memo(function TreeNode({
         fontFamily="'EB Garamond', Georgia, serif"
         fontWeight={isOnHighlightPath && isHighlightActive ? 600 : 400}
       >
-        {truncateName(person.name.full, Math.floor(nodeWidth / (fontSize * 0.55)))}
+        {truncateName(formatDisplayName(person.name), Math.floor(nodeWidth / (fontSize * 0.55)))}
       </text>
 
       {/* Years */}

@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import type { Person, AlternateName } from '@/types/person.ts';
 import type { TreeAction } from '@/context/tree-state.ts';
 import { parseDateInput } from '@/parser/date-input-parser.ts';
 import { parsePlaceInput } from '@/parser/place-input-parser.ts';
+import { formatDisplayName } from '@/utils/name-display.ts';
 
 interface EditPersonFormProps {
   person: Person;
@@ -131,12 +132,30 @@ export function EditPersonForm({ person, dispatch, onDone }: EditPersonFormProps
     deathDate, deathPlace, burialDate, burialPlace, notes, alternateNames,
     person.id, dispatch, onDone]);
 
+  // Live name preview
+  const previewName = useMemo(() => {
+    const full = [prefix.trim(), given.trim(), middle.trim(), surname.trim(), suffix.trim()]
+      .filter(Boolean).join(' ');
+    return formatDisplayName({
+      full, given: given.trim(), middle: middle.trim(), surname: surname.trim(),
+      maidenName: maidenName.trim(), prefix: prefix.trim(), suffix: suffix.trim(), raw: full,
+    });
+  }, [given, middle, surname, maidenName, prefix, suffix]);
+
   const inputClass = 'w-full bg-surface border border-border rounded px-2 py-1 text-sm text-text-primary placeholder-text-dim focus:outline-none focus:border-gold/50';
   const labelClass = 'block text-xs text-text-dim mb-1';
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3 border border-border rounded p-3 bg-bg">
       <h4 className="text-sm font-medium text-text-primary">Edit Person</h4>
+
+      {/* Live name preview */}
+      <div className="px-2 py-1.5 bg-surface rounded border border-border/50 text-sm">
+        <span className="text-text-dim text-xs">Preview: </span>
+        <span className="font-[family-name:var(--font-heading)] text-text-primary">
+          {previewName || '(unnamed)'}
+        </span>
+      </div>
 
       {/* Name */}
       <div className="grid grid-cols-2 gap-2">

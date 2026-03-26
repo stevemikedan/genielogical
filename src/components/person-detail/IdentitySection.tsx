@@ -97,10 +97,11 @@ export function IdentitySection({ person, dispatch }: IdentitySectionProps) {
         )}
 
         {/* Name details if they differ from full */}
-        {(person.name.prefix || person.name.suffix) && (
+        {(person.name.prefix || person.name.suffix || person.name.maidenName) && (
           <div className="text-xs text-text-dim">
             {person.name.prefix && <span>Prefix: {person.name.prefix} </span>}
-            {person.name.suffix && <span>Suffix: {person.name.suffix}</span>}
+            {person.name.suffix && <span>Suffix: {person.name.suffix} </span>}
+            {person.name.maidenName && <span>Maiden name: {person.name.maidenName}</span>}
           </div>
         )}
       </div>
