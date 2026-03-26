@@ -16,6 +16,7 @@ export interface PedigreeGridViewHandle {
   zoomIn: () => void;
   zoomOut: () => void;
   fitToView: () => void;
+  centerOnSelected: () => void;
 }
 
 interface PedigreeGridViewProps {
@@ -56,6 +57,11 @@ export const PedigreeGridView = forwardRef<PedigreeGridViewHandle, PedigreeGridV
     const svgRef = useRef<SVGSVGElement>(null);
     const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
     const [transform, setTransform] = useState(d3.zoomIdentity);
+
+    // Track why layout changed to decide zoom behavior
+    const layoutChangeReasonRef = useRef<'initial' | 'expand' | 'other'>('initial');
+    const expandTargetRef = useRef<string | null>(null);
+    const isInitialLayoutRef = useRef(true);
 
     const preset = GRID_DENSITY_PRESETS[density];
 
@@ -165,20 +171,77 @@ export const PedigreeGridView = forwardRef<PedigreeGridViewHandle, PedigreeGridV
         .call(zoomRef.current.transform, t);
     }, [layout.totalWidth, layout.totalHeight]);
 
-    // Fit to view on layout change
-    useEffect(() => {
-      fitToView();
-    }, [fitToView]);
+    // Center on a specific person node at current zoom (or fit if needed)
+    const centerOnNode = useCallback((personId: string) => {
+      if (!svgRef.current || !zoomRef.current) return;
+      const node = layout.nodes.find(n => n.person?.id === personId);
+      if (!node) return;
 
-    // Zoom handlers
+      const svg = svgRef.current;
+      const width = svg.clientWidth || 800;
+      const height = svg.clientHeight || 600;
+
+      // Use current zoom scale, but ensure node is visible
+      const currentTransform = d3.zoomTransform(svg);
+      const scale = Math.min(currentTransform.k, 1);
+
+      const nodeX = node.x + preset.nodeW / 2;
+      const nodeY = node.y;
+
+      const t = d3.zoomIdentity
+        .translate(width / 2 - nodeX * scale, height / 2 - nodeY * scale)
+        .scale(scale);
+
+      d3.select(svg)
+        .transition()
+        .duration(400)
+        .call(zoomRef.current.transform, t);
+    }, [layout.nodes, preset.nodeW]);
+
+    // Center on the selected person
+    const centerOnSelected = useCallback(() => {
+      if (selectedPersonId) {
+        centerOnNode(selectedPersonId);
+      } else {
+        fitToView();
+      }
+    }, [selectedPersonId, centerOnNode, fitToView]);
+
+    // Handle layout changes: fit on initial, center on expand, ignore otherwise
+    useEffect(() => {
+      if (isInitialLayoutRef.current) {
+        isInitialLayoutRef.current = false;
+        fitToView();
+      } else if (layoutChangeReasonRef.current === 'expand' && expandTargetRef.current) {
+        centerOnNode(expandTargetRef.current);
+      }
+      // Reset reason after handling
+      layoutChangeReasonRef.current = 'other';
+      expandTargetRef.current = null;
+    }, [layout, fitToView, centerOnNode]);
+
+    // Internal expand handler that sets tracking refs before calling parent
+    const handleExpand = useCallback((personId: string) => {
+      layoutChangeReasonRef.current = 'expand';
+      expandTargetRef.current = personId;
+      onExpandAncestor(personId);
+    }, [onExpandAncestor]);
+
+    const handleExpandAll = useCallback((personId: string) => {
+      layoutChangeReasonRef.current = 'expand';
+      expandTargetRef.current = personId;
+      onExpandAllFrom(personId);
+    }, [onExpandAllFrom]);
+
+    // Zoom handlers (1.2x step for smoother control)
     const zoomIn = useCallback(() => {
       if (!svgRef.current || !zoomRef.current) return;
-      d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1.3);
+      d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1.2);
     }, []);
 
     const zoomOut = useCallback(() => {
       if (!svgRef.current || !zoomRef.current) return;
-      d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 0.7);
+      d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1 / 1.2);
     }, []);
 
     // Expose zoom controls via ref
@@ -186,7 +249,8 @@ export const PedigreeGridView = forwardRef<PedigreeGridViewHandle, PedigreeGridV
       zoomIn,
       zoomOut,
       fitToView,
-    }), [zoomIn, zoomOut, fitToView]);
+      centerOnSelected,
+    }), [zoomIn, zoomOut, fitToView, centerOnSelected]);
 
     // Double-click on node re-roots
     const handleDoubleClick = useCallback((personId: string) => {
@@ -238,8 +302,8 @@ export const PedigreeGridView = forwardRef<PedigreeGridViewHandle, PedigreeGridV
                 nodeHeight={preset.nodeH}
                 isSelected={node.person?.id === selectedPersonId}
                 onClick={onSelectPerson}
-                onExpand={onExpandAncestor}
-                onExpandAll={onExpandAllFrom}
+                onExpand={handleExpand}
+                onExpandAll={handleExpandAll}
               />
             </g>
           ))}

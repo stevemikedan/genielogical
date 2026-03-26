@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { Person } from '@/types/index.ts';
 import { useTree } from '@/hooks/index.ts';
+import { formatDisplayName } from '@/utils/name-display.ts';
 
 type SortField = 'name' | 'birth' | 'death' | 'sources';
 type SortDir = 'asc' | 'desc';
@@ -121,7 +122,7 @@ export function PersonList() {
             >
               <div className="px-4 py-2 truncate">
                 <span className="font-[family-name:var(--font-display)] text-text-primary">
-                  {person.name.full || '(unnamed)'}
+                  {formatDisplayName(person.name)}
                 </span>
                 {person.sex !== 'U' && (
                   <span className="text-text-dim ml-1.5 text-xs">

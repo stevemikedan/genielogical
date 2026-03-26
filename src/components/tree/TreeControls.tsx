@@ -40,6 +40,7 @@ interface TreeControlsProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFitToView: () => void;
+  onCenterOnSelected?: () => void;
 }
 
 const VIEW_MODE_LABELS: Record<ViewMode, string> = {
@@ -74,6 +75,7 @@ export function TreeControls({
   onZoomIn,
   onZoomOut,
   onFitToView,
+  onCenterOnSelected,
 }: TreeControlsProps) {
   const [searchText, setSearchText] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
@@ -228,9 +230,12 @@ export function TreeControls({
 
       {/* Zoom controls */}
       <div className="flex gap-1">
-        <button type="button" onClick={onZoomIn} className="w-6 h-6 flex items-center justify-center rounded bg-bg border border-border text-text-secondary hover:text-text-primary text-sm" title="Zoom in">+</button>
-        <button type="button" onClick={onZoomOut} className="w-6 h-6 flex items-center justify-center rounded bg-bg border border-border text-text-secondary hover:text-text-primary text-sm" title="Zoom out">&minus;</button>
-        <button type="button" onClick={onFitToView} className="h-6 flex items-center justify-center rounded bg-bg border border-border text-text-secondary hover:text-text-primary text-xs px-2" title="Fit to view">Fit</button>
+        <button type="button" onClick={onZoomIn} className="w-8 h-8 flex items-center justify-center rounded bg-bg border border-border text-text-secondary hover:text-text-primary text-sm" title="Zoom in (+)">+</button>
+        <button type="button" onClick={onZoomOut} className="w-8 h-8 flex items-center justify-center rounded bg-bg border border-border text-text-secondary hover:text-text-primary text-sm" title="Zoom out (-)">&minus;</button>
+        <button type="button" onClick={onFitToView} className="h-8 flex items-center justify-center rounded bg-bg border border-border text-text-secondary hover:text-text-primary text-xs px-2" title="Fit to view (0)">Fit</button>
+        {onCenterOnSelected && (
+          <button type="button" onClick={onCenterOnSelected} className="h-8 flex items-center justify-center rounded bg-bg border border-border text-text-secondary hover:text-text-primary text-xs px-2" title="Center on selected (c)">Center</button>
+        )}
       </div>
 
       {/* Divider */}
