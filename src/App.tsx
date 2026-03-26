@@ -182,6 +182,7 @@ function AppContent() {
                 <HealthDashboard
                   graph={state.graph}
                   flags={state.flags}
+                  ancestryConflicts={state.ancestryConflicts}
                   onSelectPerson={handleSelectPerson}
                 />
               </div>
