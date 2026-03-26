@@ -1,4 +1,5 @@
 import type { ConfidenceTier } from './common.ts';
+import type { EraTag, LocationContext } from '@/ai/era-context.ts';
 
 export interface AIPersonValidation {
   personId: string;
@@ -103,4 +104,126 @@ export interface AIEnrichResult {
   webCitations: WebSearchCitation[];
   generatedAt: Date;
   modelId: string;
+}
+
+// ── Three-Tier AI Modes (Phase 3) ────────────────────────────────
+
+export type AIMode = 'quick' | 'standard' | 'deep';
+
+export type Plausibility = 'confirmed' | 'plausible' | 'questionable' | 'implausible';
+
+export type ParentalLinkStatus = 'confirmed' | 'plausible' | 'questionable' | 'implausible' | 'contradicted';
+
+/** Mode 1: Quick plausibility check result */
+export interface QuickCheckResult {
+  plausibility: Plausibility;
+  issues: QuickCheckIssue[];
+  suggestedTier: ConfidenceTier;
+  tierReason: string;
+  quickWin: string | null;
+}
+
+export interface QuickCheckIssue {
+  type: 'date' | 'place' | 'name' | 'connection' | 'title';
+  description: string;
+  correction: string | null;
+}
+
+/** Mode 2: Standard validation report */
+export interface ValidationReport {
+  personAssessment: {
+    plausibility: Plausibility;
+    summary: string;
+  };
+  parentalLink: {
+    status: ParentalLinkStatus;
+    summary: string;
+  } | null;
+  recordsFound: FoundRecord[];
+  recordsExpectedButNotFound: MissingRecord[];
+  dateDiscrepancies: DateDiscrepancy[];
+  suggestedTier: ConfidenceTier;
+  nextStep: ResearchNextStep | null;
+}
+
+export interface FoundRecord {
+  type: 'census' | 'vital' | 'church' | 'military' | 'land' | 'probate' | 'published_genealogy' | 'peerage' | 'other';
+  title: string;
+  url: string | null;
+  repository: string;
+  confirms: string[];
+  contradicts: string[];
+  sourceClass: 'primary' | 'secondary' | 'tertiary';
+}
+
+export interface MissingRecord {
+  type: string;
+  description: string;
+  significance: string;
+}
+
+export interface DateDiscrepancy {
+  gedcomClaim: string;
+  evidenceSays: string;
+  source: string;
+}
+
+export interface ResearchNextStep {
+  action: string;
+  repository: string;
+  expectedCost: 'free' | 'subscription' | 'archive_visit' | 'unknown';
+  impactIfFound: string;
+}
+
+/** Mode 3: Deep research task */
+export type DeepResearchTaskType =
+  | 'verify_person'
+  | 'verify_edge'
+  | 'verify_bridge'
+  | 'verify_notable_path'
+  | 'find_parents'
+  | 'resolve_duplicate'
+  | 'resolve_date_conflict'
+  | 'verify_title';
+
+export interface DeepResearchTask {
+  type: DeepResearchTaskType;
+  primaryPersonId: string;
+  secondaryPersonId: string | null;
+  edgeIds: string[];
+  eraTag: EraTag;
+  locationContext: LocationContext;
+  existingSources: string[];
+  activeFlags: string[];
+  researchQuestions: string[];
+  pathPersonIds: string[] | null;
+  notableAncestorName: string | null;
+}
+
+export type DeepResearchStatus = 'CONTINUE' | 'COMPLETE' | 'DEAD_END';
+
+export interface DeepResearchFinding {
+  type: 'confirmation' | 'contradiction' | 'new_lead' | 'absence';
+  description: string;
+  url: string | null;
+  sourceClass: 'primary' | 'secondary' | 'tertiary' | null;
+  relevantTo: string;
+}
+
+/** Mode 3: Single round result */
+export interface DeepResearchRound {
+  round: number;
+  searchesPerformed: string[];
+  findings: DeepResearchFinding[];
+  status: DeepResearchStatus;
+}
+
+/** Source discovered by AI that can be imported */
+export interface DiscoveredSourceImport {
+  title: string;
+  url: string | null;
+  repository: string;
+  sourceClass: 'primary' | 'secondary' | 'tertiary';
+  sourceType: string;
+  provesWhat: string[];
 }
