@@ -11,6 +11,6 @@ export { TIER_LABELS, TIER_COLORS, TIER_DASH, TIER_CSS_CLASSES, TIER_BG_CLASSES,
 export type { BridgeZone } from './bridge.ts';
 export type { NotableCategory, NotableAncestor, StoryPathResult } from './story-path.ts';
 export type { BranchAnalysis, DeepScanResult } from './deep-scan.ts';
-export type { AIPersonValidation, AISourceSuggestion, AIEdgeValidation, AINotableContext, BatchValidationScope, BatchProgress, CostEstimate } from './ai.ts';
+export type { AINotableContext, BatchValidationScope, BatchProgress, CostEstimate } from './ai.ts';
 export type { TreeMetadata } from './tree.ts';
 export type { CrossTreeLink } from './cross-tree-link.ts';

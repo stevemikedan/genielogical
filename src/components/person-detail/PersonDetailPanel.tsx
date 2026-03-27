@@ -11,9 +11,11 @@ import { ConjectureSection } from './ConjectureSection.tsx';
 import { ProofLadderSection } from './ProofLadderSection.tsx';
 import { AIValidationSection } from './AIValidationSection.tsx';
 import { AIEnrichSection } from './AIEnrichSection.tsx';
+import { ConflictResolutionSection } from './ConflictResolutionSection.tsx';
 import { ResearchStepsSection } from './ResearchStepsSection.tsx';
 import { WorkspaceContext } from '@/context/workspace-context.tsx';
 import { CrossTreeLinkModal } from '@/components/layout/CrossTreeLinkModal.tsx';
+import { formatDisplayName } from '@/utils/name-display.ts';
 
 export function PersonDetailPanel() {
   const { state, dispatch } = useTree();
@@ -83,7 +85,7 @@ export function PersonDetailPanel() {
         {/* Header */}
         <div className="sticky top-0 bg-surface border-b border-border px-4 py-3 flex items-center justify-between z-10">
           <h2 className="font-[family-name:var(--font-heading)] text-lg text-text-primary truncate pr-2">
-            {detail.person.name.full}
+            {formatDisplayName(detail.person.name)}
           </h2>
           <button
             type="button"
@@ -134,6 +136,8 @@ export function PersonDetailPanel() {
           />
 
           <AIValidationSection personId={detail.person.id} />
+
+          <ConflictResolutionSection personId={detail.person.id} onNavigate={handleNavigate} />
 
           <AIEnrichSection personId={detail.person.id} />
 

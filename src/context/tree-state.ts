@@ -8,7 +8,8 @@ import type { NodeStatus } from '@/types/common.ts';
 import type { DeepScanResult } from '@/types/deep-scan.ts';
 import type { StoryPathResult } from '@/types/story-path.ts';
 import type { ResearchPriority, ResearchStep } from '@/types/research.ts';
-import type { AIPersonValidation, AIEdgeValidation, AINotableContext, AIEnrichResult, BatchProgress } from '@/types/ai.ts';
+import type { AINotableContext, AIEnrichResult, BatchProgress, QuickCheckResult, ValidationReport, DeepResearchRound } from '@/types/ai.ts';
+import type { AncestryConflict, ConvergencePoint } from '@/types/conflict.ts';
 import { TreeGraph } from '@/graph/tree-graph.ts';
 import { scoreAllConfidence } from '@/engine/confidence-scorer.ts';
 
@@ -28,11 +29,14 @@ export interface TreeState {
   deepScanResult: DeepScanResult | null;
   storyPathResult: StoryPathResult | null;
   researchPriorities: ResearchPriority[];
-  aiValidations: Map<string, AIPersonValidation>;
-  aiEdgeValidations: Map<string, AIEdgeValidation>;
   aiNotableContexts: Map<string, AINotableContext>;
   aiBatchProgress: BatchProgress | null;
   aiEnrichResults: Map<string, AIEnrichResult>;
+  aiQuickChecks: Map<string, QuickCheckResult>;
+  aiValidationReports: Map<string, ValidationReport>;
+  aiDeepResearchSessions: Map<string, DeepResearchRound[]>;
+  ancestryConflicts: AncestryConflict[];
+  convergencePoints: ConvergencePoint[];
   researchSteps: ResearchStep[];
 }
 
@@ -54,8 +58,6 @@ export type TreeAction =
   | { type: 'SET_DEEP_SCAN'; result: DeepScanResult }
   | { type: 'SET_STORY_PATHS'; result: StoryPathResult }
   | { type: 'SET_RESEARCH_PRIORITIES'; priorities: ResearchPriority[] }
-  | { type: 'SET_AI_VALIDATION'; validation: AIPersonValidation }
-  | { type: 'SET_AI_EDGE_VALIDATION'; validation: AIEdgeValidation }
   | { type: 'SET_AI_NOTABLE_CONTEXT'; context: AINotableContext }
   | { type: 'SET_BATCH_PROGRESS'; progress: BatchProgress | null }
   | { type: 'SET_RESEARCH_STEPS'; steps: ResearchStep[] }
@@ -68,6 +70,12 @@ export type TreeAction =
   | { type: 'MERGE_PERSONS'; keepId: string; removeId: string }
   | { type: 'INIT_EMPTY_TREE' }
   | { type: 'SET_AI_ENRICH'; result: AIEnrichResult }
+  | { type: 'SET_AI_QUICK_CHECK'; personId: string; result: QuickCheckResult }
+  | { type: 'SET_AI_VALIDATION_REPORT'; personId: string; report: ValidationReport }
+  | { type: 'APPEND_DEEP_RESEARCH_ROUND'; personId: string; round: DeepResearchRound }
+  | { type: 'CLEAR_DEEP_RESEARCH'; personId: string }
+  | { type: 'SET_ANCESTRY_CONFLICTS'; conflicts: AncestryConflict[] }
+  | { type: 'SET_CONVERGENCE_POINTS'; points: ConvergencePoint[] }
   | { type: 'EXPAND_TO_ANCESTOR'; targetPersonId: string | null }
   | { type: 'LOAD_TREE'; graph: TreeGraph; flags: Flag[]; currentTreeId: string };
 
@@ -85,11 +93,14 @@ export const initialTreeState: TreeState = {
   deepScanResult: null,
   storyPathResult: null,
   researchPriorities: [],
-  aiValidations: new Map(),
-  aiEdgeValidations: new Map(),
   aiNotableContexts: new Map(),
   aiBatchProgress: null,
   aiEnrichResults: new Map(),
+  aiQuickChecks: new Map(),
+  aiValidationReports: new Map(),
+  aiDeepResearchSessions: new Map(),
+  ancestryConflicts: [],
+  convergencePoints: [],
   researchSteps: [],
 };
 
@@ -113,11 +124,14 @@ export function treeReducer(state: TreeState, action: TreeAction): TreeState {
         graph: action.graph,
         stats: action.stats,
         conjectures: new Map(),
-        aiValidations: new Map(),
-        aiEdgeValidations: new Map(),
         aiNotableContexts: new Map(),
         aiBatchProgress: null,
         aiEnrichResults: new Map(),
+        aiQuickChecks: new Map(),
+        aiValidationReports: new Map(),
+        aiDeepResearchSessions: new Map(),
+        ancestryConflicts: [],
+        convergencePoints: [],
         researchSteps: [],
         error: null,
       };
@@ -287,18 +301,6 @@ export function treeReducer(state: TreeState, action: TreeAction): TreeState {
     case 'SET_RESEARCH_PRIORITIES':
       return { ...state, researchPriorities: action.priorities };
 
-    case 'SET_AI_VALIDATION': {
-      const aiValidations = new Map(state.aiValidations);
-      aiValidations.set(action.validation.personId, action.validation);
-      return { ...state, aiValidations };
-    }
-
-    case 'SET_AI_EDGE_VALIDATION': {
-      const aiEdgeValidations = new Map(state.aiEdgeValidations);
-      aiEdgeValidations.set(action.validation.edgeId, action.validation);
-      return { ...state, aiEdgeValidations };
-    }
-
     case 'SET_AI_NOTABLE_CONTEXT': {
       const aiNotableContexts = new Map(state.aiNotableContexts);
       aiNotableContexts.set(action.context.personId, action.context);
@@ -423,6 +425,37 @@ export function treeReducer(state: TreeState, action: TreeAction): TreeState {
       return { ...state, selectedPersonId: newSelectedId, flags: mergedFlags };
     }
 
+    case 'SET_AI_QUICK_CHECK': {
+      const aiQuickChecks = new Map(state.aiQuickChecks);
+      aiQuickChecks.set(action.personId, action.result);
+      return { ...state, aiQuickChecks };
+    }
+
+    case 'SET_AI_VALIDATION_REPORT': {
+      const aiValidationReports = new Map(state.aiValidationReports);
+      aiValidationReports.set(action.personId, action.report);
+      return { ...state, aiValidationReports };
+    }
+
+    case 'APPEND_DEEP_RESEARCH_ROUND': {
+      const aiDeepResearchSessions = new Map(state.aiDeepResearchSessions);
+      const existing = aiDeepResearchSessions.get(action.personId) ?? [];
+      aiDeepResearchSessions.set(action.personId, [...existing, action.round]);
+      return { ...state, aiDeepResearchSessions };
+    }
+
+    case 'CLEAR_DEEP_RESEARCH': {
+      const aiDeepResearchSessions = new Map(state.aiDeepResearchSessions);
+      aiDeepResearchSessions.delete(action.personId);
+      return { ...state, aiDeepResearchSessions };
+    }
+
+    case 'SET_ANCESTRY_CONFLICTS':
+      return { ...state, ancestryConflicts: action.conflicts };
+
+    case 'SET_CONVERGENCE_POINTS':
+      return { ...state, convergencePoints: action.points };
+
     case 'EXPAND_TO_ANCESTOR':
       return { ...state, expandToAncestor: action.targetPersonId };
 
@@ -470,11 +503,14 @@ export function treeReducer(state: TreeState, action: TreeAction): TreeState {
         },
         flags: [],
         conjectures: new Map(),
-        aiValidations: new Map(),
-        aiEdgeValidations: new Map(),
         aiNotableContexts: new Map(),
         aiBatchProgress: null,
         aiEnrichResults: new Map(),
+        aiQuickChecks: new Map(),
+        aiValidationReports: new Map(),
+        aiDeepResearchSessions: new Map(),
+        ancestryConflicts: [],
+        convergencePoints: [],
         researchSteps: [],
         error: null,
       };

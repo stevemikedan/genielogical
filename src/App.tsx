@@ -8,7 +8,7 @@ import { PersonList } from '@/components/layout/PersonList.tsx';
 import { HealthDashboard } from '@/components/health-dashboard/index.ts';
 import { TreeNavigator } from '@/components/tree/index.ts';
 import { PersonDetailPanel } from '@/components/person-detail/index.ts';
-import { DeepScanView } from '@/components/research/index.ts';
+import { DeepScanView, ChatPanel } from '@/components/research/index.ts';
 import { usePhaseEEngines } from '@/hooks/index.ts';
 import { AIStatusIndicator } from '@/components/shared/AIStatusIndicator.tsx';
 import { AddPersonModal } from '@/components/shared/AddPersonModal.tsx';
@@ -25,6 +25,7 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<LoadedTab>('tree');
   const [showAddPerson, setShowAddPerson] = useState(false);
   const [showAddEdge, setShowAddEdge] = useState(false);
+  const [showChat, setShowChat] = useState(false);
 
   // Re-run Phase E engines when root person changes
   usePhaseEEngines(state.selectedPersonId, state.graph, dispatch);
@@ -34,8 +35,19 @@ function AppContent() {
 
   const handleSelectPerson = (personId: string) => {
     dispatch({ type: 'SELECT_PERSON', personId });
+    setShowChat(false); // Close chat when opening person detail
     setActiveTab('tree');
   };
+
+  const handleToggleChat = useCallback(() => {
+    setShowChat(prev => {
+      if (!prev) {
+        // Opening chat — close person detail
+        dispatch({ type: 'SELECT_PERSON', personId: null });
+      }
+      return !prev;
+    });
+  }, [dispatch]);
 
   const handleStartFromScratch = useCallback(async () => {
     await createNewTree('Untitled Tree');
@@ -108,6 +120,21 @@ function AppContent() {
                 <span className="hidden sm:inline">Connect</span>
               </button>
             </>
+          )}
+          {state.phase === 'loaded' && (
+            <button
+              type="button"
+              onClick={handleToggleChat}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm transition-colors ${
+                showChat
+                  ? 'bg-gold text-bg font-medium'
+                  : 'text-text-secondary hover:bg-surface hover:text-text-primary'
+              }`}
+              title="Research Assistant"
+            >
+              <span className="text-base leading-none">&#x2709;</span>
+              <span className="hidden sm:inline">Chat</span>
+            </button>
           )}
           <AIStatusIndicator />
           {state.phase === 'loaded' && (
@@ -182,6 +209,7 @@ function AppContent() {
                 <HealthDashboard
                   graph={state.graph}
                   flags={state.flags}
+                  ancestryConflicts={state.ancestryConflicts}
                   onSelectPerson={handleSelectPerson}
                 />
               </div>
@@ -210,8 +238,12 @@ function AppContent() {
         )}
       </main>
 
-      {state.phase === 'loaded' && state.selectedPersonId && (
+      {state.phase === 'loaded' && state.selectedPersonId && !showChat && (
         <PersonDetailPanel />
+      )}
+
+      {state.phase === 'loaded' && showChat && (
+        <ChatPanel activeView={activeTab} onClose={() => setShowChat(false)} />
       )}
 
       {showAddPerson && state.graph && (

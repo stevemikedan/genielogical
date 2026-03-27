@@ -92,6 +92,14 @@ export function scoreEdgeConfidence(
     reasons.push('Prestige inflation flag on connected person.');
   }
 
+  // Step 2b: Ancestry conflict penalty
+  const childFlags = child ? getFlagsForPerson(child, flags) : [];
+  const hasConflictFlag = childFlags.some(f => f.ruleId === 'ANCESTRY_CONFLICT_DIFFERENT_PARENTS');
+  if (hasConflictFlag) {
+    baseTier = Math.max(baseTier, 3) as ConfidenceTier;
+    reasons.push('Ancestry conflict: child has conflicting parent assignments.');
+  }
+
   // Step 3: Era adjustment
   const parentBirthYear = parent?.birth.date?.year ?? null;
   if (parentBirthYear !== null) {

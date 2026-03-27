@@ -14,6 +14,11 @@ import type { ViewMode, TreeDensity, TreeOrientation } from './TreeControls.tsx'
 import { TreeMinimap } from './TreeMinimap.tsx';
 import { PedigreeGridView } from './PedigreeGridView.tsx';
 import type { PedigreeGridViewHandle } from './PedigreeGridView.tsx';
+import { FanChartView } from './FanChartView.tsx';
+import type { FanChartViewHandle } from './FanChartView.tsx';
+import type { FanMode } from './fan-chart-layout.ts';
+import { LineagePathView } from './LineagePathView.tsx';
+import type { LineagePathViewHandle } from './LineagePathView.tsx';
 import { AddPersonModal } from '@/components/shared/AddPersonModal.tsx';
 import { generateEdgeId } from '@/utils/id-generator.ts';
 import type { Edge } from '@/types/edge.ts';
@@ -165,9 +170,13 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
   });
   const [transform, setTransform] = useState(d3.zoomIdentity);
 
+  const [fanMode, setFanMode] = useState<FanMode>('semi');
+
   const svgRef = useRef<SVGSVGElement>(null);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const gridViewRef = useRef<PedigreeGridViewHandle>(null);
+  const fanChartRef = useRef<FanChartViewHandle>(null);
+  const lineagePathRef = useRef<LineagePathViewHandle>(null);
 
   // State for placeholder-triggered add person (pedigreeGrid mode)
   const [pendingAdd, setPendingAdd] = useState<{ sex: 'M' | 'F'; connectToChildId: string | null } | null>(null);
@@ -183,9 +192,10 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
 
   const isHighlightActive = selectedPersonId !== null && highlightPath.size > 1;
 
-  // Build hierarchy
+  // Build hierarchy (not used for fan or pedigreeGrid — they have their own layout)
   const hierarchyRoot = useMemo(() => {
     if (!rootPersonId) return null;
+    if (viewMode === 'fan' || viewMode === 'pedigreeGrid' || viewMode === 'lineagePath') return null;
     if (viewMode === 'directLine') {
       return buildDirectLineHierarchy(rootPersonId, graph, maxGenerations, expandedNodes, expandedAncestors);
     }
@@ -293,8 +303,16 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
       gridViewRef.current?.zoomIn();
       return;
     }
+    if (viewMode === 'fan') {
+      fanChartRef.current?.zoomIn();
+      return;
+    }
+    if (viewMode === 'lineagePath') {
+      lineagePathRef.current?.zoomIn();
+      return;
+    }
     if (!svgRef.current || !zoomRef.current) return;
-    d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1.3);
+    d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1.2);
   }, [viewMode]);
 
   const handleZoomOut = useCallback(() => {
@@ -302,13 +320,29 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
       gridViewRef.current?.zoomOut();
       return;
     }
+    if (viewMode === 'fan') {
+      fanChartRef.current?.zoomOut();
+      return;
+    }
+    if (viewMode === 'lineagePath') {
+      lineagePathRef.current?.zoomOut();
+      return;
+    }
     if (!svgRef.current || !zoomRef.current) return;
-    d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 0.7);
+    d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1 / 1.2);
   }, [viewMode]);
 
   const handleFitToView = useCallback(() => {
     if (viewMode === 'pedigreeGrid') {
       gridViewRef.current?.fitToView();
+      return;
+    }
+    if (viewMode === 'fan') {
+      fanChartRef.current?.fitToView();
+      return;
+    }
+    if (viewMode === 'lineagePath') {
+      lineagePathRef.current?.fitToView();
       return;
     }
     if (!svgRef.current || !layoutData || !zoomRef.current) return;
@@ -322,6 +356,56 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
 
     d3.select(svg).transition().duration(500).call(zoomRef.current.transform, t);
   }, [viewMode, layoutData, orientation]);
+
+  const handleCenterOnSelected = useCallback(() => {
+    if (viewMode === 'pedigreeGrid') {
+      gridViewRef.current?.centerOnSelected();
+      return;
+    }
+    if (viewMode === 'fan') {
+      fanChartRef.current?.centerOnSelected();
+      return;
+    }
+    if (viewMode === 'lineagePath') {
+      lineagePathRef.current?.centerOnSelected();
+      return;
+    }
+    if (!svgRef.current || !zoomRef.current || !layoutData) return;
+    if (!selectedPersonId) {
+      handleFitToView();
+      return;
+    }
+    const node = layoutData.descendants().find(n => n.data.person.id === selectedPersonId);
+    if (!node) {
+      handleFitToView();
+      return;
+    }
+    const svg = svgRef.current;
+    const width = svg.clientWidth || 800;
+    const height = svg.clientHeight || 600;
+    const { sx, sy } = toSvg(node.x, node.y, orientation);
+    const scale = Math.min(transform.k, 1);
+    const t = d3.zoomIdentity
+      .translate(width / 2 - sx * scale, height / 2 - sy * scale)
+      .scale(scale);
+    d3.select(svg).transition().duration(400).call(zoomRef.current.transform, t);
+  }, [viewMode, selectedPersonId, layoutData, orientation, transform.k, handleFitToView]);
+
+  // Keyboard shortcuts for zoom
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      // Skip if user is typing in an input
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if (e.key === '=' || e.key === '+') { handleZoomIn(); e.preventDefault(); }
+      else if (e.key === '-') { handleZoomOut(); e.preventDefault(); }
+      else if (e.key === '0') { handleFitToView(); e.preventDefault(); }
+      else if (e.key === 'c' && !e.ctrlKey && !e.metaKey) { handleCenterOnSelected(); e.preventDefault(); }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleZoomIn, handleZoomOut, handleFitToView, handleCenterOnSelected]);
 
   const handleMinimapNavigate = useCallback((x: number, y: number) => {
     if (!svgRef.current || !zoomRef.current) return;
@@ -488,13 +572,39 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
         onDensityChange={setDensity}
         orientation={orientation}
         onOrientationChange={setOrientation}
+        fanMode={fanMode}
+        onFanModeChange={setFanMode}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onFitToView={handleFitToView}
+        onCenterOnSelected={handleCenterOnSelected}
       />
 
       <div className="relative border border-border rounded-lg overflow-hidden" style={{ height: '70vh' }}>
-        {viewMode === 'pedigreeGrid' ? (
+        {viewMode === 'fan' ? (
+          <FanChartView
+            ref={fanChartRef}
+            graph={graph}
+            rootPersonId={rootPersonId}
+            selectedPersonId={selectedPersonId}
+            onSelectPerson={onSelectPerson}
+            density={density}
+            maxGenerations={maxGenerations}
+            visibleTiers={visibleTiers}
+            showRejected={showRejected}
+            fanMode={fanMode}
+            onReRoot={setRootPersonId}
+          />
+        ) : viewMode === 'lineagePath' ? (
+          <LineagePathView
+            ref={lineagePathRef}
+            graph={graph}
+            rootPersonId={rootPersonId}
+            selectedPersonId={selectedPersonId}
+            onSelectPerson={onSelectPerson}
+            onReRoot={setRootPersonId}
+          />
+        ) : viewMode === 'pedigreeGrid' ? (
           <PedigreeGridView
             ref={gridViewRef}
             graph={graph}

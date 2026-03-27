@@ -18,11 +18,13 @@ const CATEGORY_LABELS: Record<FlagCategory, string> = {
   structural: 'Structural Issues',
   unresolved_parentage: 'Unresolved Parentage',
   data_quality: 'Data Quality',
+  ancestry_conflict: 'Ancestry Conflicts',
 };
 
 const CATEGORY_ORDER: FlagCategory[] = [
   'chronological',
   'structural',
+  'ancestry_conflict',
   'prestige_inflation',
   'source_desert',
   'duplicate_suspect',

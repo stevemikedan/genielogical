@@ -2,6 +2,7 @@ import { memo } from 'react';
 import type { PedigreeGridNode as PedigreeGridNodeType } from './pedigree-grid-layout.ts';
 import type { ConfidenceTier } from '@/types/common.ts';
 import { TIER_COLORS } from '@/types/tier-labels.ts';
+import { formatDisplayName } from '@/utils/name-display.ts';
 
 interface PedigreeGridNodeProps {
   node: PedigreeGridNodeType;
@@ -142,7 +143,7 @@ export const PedigreeGridNode = memo(function PedigreeGridNode({
         fontSize={nodeHeight >= 62 ? 14 : 12}
         fontFamily="var(--font-heading)"
       >
-        {truncateName(person.name.full, maxNameChars)}
+        {truncateName(formatDisplayName(person.name), maxNameChars)}
       </text>
 
       {/* Years */}

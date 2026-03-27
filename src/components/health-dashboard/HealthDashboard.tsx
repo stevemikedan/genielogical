@@ -1,15 +1,18 @@
 import type { Flag } from '@/types/flag.ts';
 import type { TreeGraph } from '@/graph/tree-graph.ts';
+import type { AncestryConflict } from '@/types/conflict.ts';
 import { SummaryCards } from './SummaryCards.tsx';
 import { IssueList } from './IssueList.tsx';
+import { AncestryConflictCard } from './AncestryConflictCard.tsx';
 
 interface HealthDashboardProps {
   graph: TreeGraph;
   flags: Flag[];
+  ancestryConflicts?: AncestryConflict[];
   onSelectPerson: (id: string) => void;
 }
 
-export function HealthDashboard({ graph, flags, onSelectPerson }: HealthDashboardProps) {
+export function HealthDashboard({ graph, flags, ancestryConflicts, onSelectPerson }: HealthDashboardProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -22,6 +25,10 @@ export function HealthDashboard({ graph, flags, onSelectPerson }: HealthDashboar
       </div>
 
       <SummaryCards graph={graph} flags={flags} />
+
+      {ancestryConflicts && ancestryConflicts.length > 0 && (
+        <AncestryConflictCard conflicts={ancestryConflicts} onSelectPerson={onSelectPerson} />
+      )}
 
       <IssueList
         flags={flags}
