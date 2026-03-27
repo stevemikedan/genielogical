@@ -63,8 +63,6 @@ function renderWithContext(state: Partial<TreeState>, dispatch?: TreeState exten
     deepScanResult: null,
     storyPathResult: null,
     researchPriorities: [],
-    aiValidations: new Map(),
-    aiEdgeValidations: new Map(),
     aiNotableContexts: new Map(),
     aiBatchProgress: null,
     aiEnrichResults: new Map(),

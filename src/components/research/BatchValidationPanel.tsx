@@ -1,17 +1,36 @@
 import { useState, useCallback, useRef } from 'react';
 import { useTree } from '@/hooks/use-tree.ts';
 import { getApiKey } from '@/ai/ai-client.ts';
-import { estimateCost, runBatchValidation } from '@/ai/batch-validator.ts';
-import type { BatchValidationScope, CostEstimate, BatchProgress } from '@/types/ai.ts';
+import { runBatchQuickCheck } from '@/ai/batch-runner.ts';
+import { estimateQuickCheckCost } from '@/ai/cost-estimator.ts';
+import type { BatchProgress } from '@/types/ai.ts';
+import type { Person } from '@/types/person.ts';
+
+type BatchScope = 'all_flagged' | 'tier3_4' | 'whole_tree';
 
 interface BatchValidationPanelProps {
   onOpenSettings: () => void;
 }
 
+function getPersonIdsInScope(
+  scope: BatchScope,
+  persons: Map<string, Person>,
+  flaggedIds: Set<string>,
+): string[] {
+  switch (scope) {
+    case 'all_flagged':
+      return [...flaggedIds].filter(id => persons.has(id));
+    case 'tier3_4':
+      return [...persons.values()].filter(p => p.confidenceTier >= 3).map(p => p.id);
+    case 'whole_tree':
+      return [...persons.keys()];
+  }
+}
+
 export function BatchValidationPanel({ onOpenSettings }: BatchValidationPanelProps) {
   const { state, dispatch } = useTree();
-  const [scope, setScope] = useState<BatchValidationScope>('all_flagged');
-  const [estimate, setEstimate] = useState<CostEstimate | null>(null);
+  const [scope, setScope] = useState<BatchScope>('all_flagged');
+  const [estimate, setEstimate] = useState<{ personCount: number; estimatedCostUsd: number } | null>(null);
   const [progress, setProgress] = useState<BatchProgress | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -22,24 +41,35 @@ export function BatchValidationPanel({ onOpenSettings }: BatchValidationPanelPro
 
   const handleEstimate = useCallback(() => {
     if (!graph) return;
-    const est = estimateCost(scope, graph, flags);
-    setEstimate(est);
+    const flaggedIds = new Set(flags.flatMap(f => f.affectedPersonIds));
+    const personIds = getPersonIdsInScope(scope, graph.persons, flaggedIds);
+    const cost = estimateQuickCheckCost(personIds.length);
+    setEstimate({ personCount: personIds.length, estimatedCostUsd: cost.estimatedCostUsd });
     setConfirmOpen(true);
   }, [scope, graph, flags]);
 
   const handleStart = useCallback(async () => {
-    const apiKey = getApiKey();
-    if (!apiKey || !graph) return;
+    if (!graph) return;
 
     setConfirmOpen(false);
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const gen = runBatchValidation(scope, graph, flags, apiKey, dispatch, controller.signal);
+    const flaggedIds = new Set(flags.flatMap(f => f.affectedPersonIds));
+    const personIds = getPersonIdsInScope(scope, graph.persons, flaggedIds);
 
-    for await (const prog of gen) {
+    const gen = runBatchQuickCheck(personIds, graph, flags, controller.signal);
+
+    for await (const { progress: prog, results } of gen) {
       setProgress({ ...prog });
       dispatch({ type: 'SET_BATCH_PROGRESS', progress: { ...prog } });
+
+      // Dispatch individual quick check results
+      for (const r of results) {
+        if (r.result) {
+          dispatch({ type: 'SET_AI_QUICK_CHECK', personId: r.personId, result: r.result });
+        }
+      }
     }
 
     abortRef.current = null;
@@ -53,7 +83,7 @@ export function BatchValidationPanel({ onOpenSettings }: BatchValidationPanelPro
   const isComplete = progress?.status === 'complete';
   const isCancelled = progress?.status === 'cancelled';
 
-  const SCOPE_LABELS: Record<BatchValidationScope, string> = {
+  const SCOPE_LABELS: Record<BatchScope, string> = {
     all_flagged: 'All Flagged',
     tier3_4: 'Tier 3-4',
     whole_tree: 'Whole Tree',
@@ -61,7 +91,7 @@ export function BatchValidationPanel({ onOpenSettings }: BatchValidationPanelPro
 
   return (
     <div className="rounded-lg border border-border bg-surface p-4">
-      <h3 className="font-serif text-base text-text-primary mb-3">Batch AI Validation</h3>
+      <h3 className="font-serif text-base text-text-primary mb-3">Batch AI Quick Check</h3>
 
       {!hasKey && (
         <div className="text-sm text-text-dim">
@@ -82,7 +112,7 @@ export function BatchValidationPanel({ onOpenSettings }: BatchValidationPanelPro
             <label className="text-sm text-text-secondary">Scope:</label>
             <select
               value={scope}
-              onChange={e => { setScope(e.target.value as BatchValidationScope); setEstimate(null); }}
+              onChange={e => { setScope(e.target.value as BatchScope); setEstimate(null); }}
               className="bg-bg border border-border rounded px-2 py-1 text-sm text-text-primary focus:outline-none focus:border-gold/50"
             >
               {Object.entries(SCOPE_LABELS).map(([value, label]) => (
@@ -109,16 +139,13 @@ export function BatchValidationPanel({ onOpenSettings }: BatchValidationPanelPro
             <span className="font-mono text-gold">{estimate.personCount}</span> people
             {' '}· estimated <span className="font-mono text-gold">${estimate.estimatedCostUsd.toFixed(2)}</span>
           </p>
-          <p className="text-xs text-text-dim mb-3">
-            ~{estimate.estimatedInputTokens.toLocaleString()} input + ~{estimate.estimatedOutputTokens.toLocaleString()} output tokens
-          </p>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={handleStart}
               className="px-3 py-1.5 text-sm rounded bg-gold text-bg font-medium hover:bg-gold-light transition-colors"
             >
-              Start Validation
+              Start Quick Check
             </button>
             <button
               type="button"
@@ -165,10 +192,10 @@ export function BatchValidationPanel({ onOpenSettings }: BatchValidationPanelPro
       {(isComplete || isCancelled) && progress && (
         <div className="mt-3 space-y-2">
           <p className="text-sm text-text-primary">
-            {isComplete ? 'Validation complete.' : 'Validation cancelled.'}
+            {isComplete ? 'Quick check complete.' : 'Quick check cancelled.'}
           </p>
           <div className="flex gap-4 text-xs text-text-secondary">
-            <span>{progress.completed} validated</span>
+            <span>{progress.completed} checked</span>
             {progress.failed > 0 && <span className="text-tier4">{progress.failed} failed</span>}
             <span className="font-mono">${progress.actualCostUsd.toFixed(3)} spent</span>
           </div>

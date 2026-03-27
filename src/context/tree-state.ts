@@ -8,7 +8,7 @@ import type { NodeStatus } from '@/types/common.ts';
 import type { DeepScanResult } from '@/types/deep-scan.ts';
 import type { StoryPathResult } from '@/types/story-path.ts';
 import type { ResearchPriority, ResearchStep } from '@/types/research.ts';
-import type { AIPersonValidation, AIEdgeValidation, AINotableContext, AIEnrichResult, BatchProgress, QuickCheckResult, ValidationReport, DeepResearchRound } from '@/types/ai.ts';
+import type { AINotableContext, AIEnrichResult, BatchProgress, QuickCheckResult, ValidationReport, DeepResearchRound } from '@/types/ai.ts';
 import type { AncestryConflict, ConvergencePoint } from '@/types/conflict.ts';
 import { TreeGraph } from '@/graph/tree-graph.ts';
 import { scoreAllConfidence } from '@/engine/confidence-scorer.ts';
@@ -29,8 +29,6 @@ export interface TreeState {
   deepScanResult: DeepScanResult | null;
   storyPathResult: StoryPathResult | null;
   researchPriorities: ResearchPriority[];
-  aiValidations: Map<string, AIPersonValidation>;
-  aiEdgeValidations: Map<string, AIEdgeValidation>;
   aiNotableContexts: Map<string, AINotableContext>;
   aiBatchProgress: BatchProgress | null;
   aiEnrichResults: Map<string, AIEnrichResult>;
@@ -60,8 +58,6 @@ export type TreeAction =
   | { type: 'SET_DEEP_SCAN'; result: DeepScanResult }
   | { type: 'SET_STORY_PATHS'; result: StoryPathResult }
   | { type: 'SET_RESEARCH_PRIORITIES'; priorities: ResearchPriority[] }
-  | { type: 'SET_AI_VALIDATION'; validation: AIPersonValidation }
-  | { type: 'SET_AI_EDGE_VALIDATION'; validation: AIEdgeValidation }
   | { type: 'SET_AI_NOTABLE_CONTEXT'; context: AINotableContext }
   | { type: 'SET_BATCH_PROGRESS'; progress: BatchProgress | null }
   | { type: 'SET_RESEARCH_STEPS'; steps: ResearchStep[] }
@@ -97,8 +93,6 @@ export const initialTreeState: TreeState = {
   deepScanResult: null,
   storyPathResult: null,
   researchPriorities: [],
-  aiValidations: new Map(),
-  aiEdgeValidations: new Map(),
   aiNotableContexts: new Map(),
   aiBatchProgress: null,
   aiEnrichResults: new Map(),
@@ -130,8 +124,6 @@ export function treeReducer(state: TreeState, action: TreeAction): TreeState {
         graph: action.graph,
         stats: action.stats,
         conjectures: new Map(),
-        aiValidations: new Map(),
-        aiEdgeValidations: new Map(),
         aiNotableContexts: new Map(),
         aiBatchProgress: null,
         aiEnrichResults: new Map(),
@@ -308,18 +300,6 @@ export function treeReducer(state: TreeState, action: TreeAction): TreeState {
 
     case 'SET_RESEARCH_PRIORITIES':
       return { ...state, researchPriorities: action.priorities };
-
-    case 'SET_AI_VALIDATION': {
-      const aiValidations = new Map(state.aiValidations);
-      aiValidations.set(action.validation.personId, action.validation);
-      return { ...state, aiValidations };
-    }
-
-    case 'SET_AI_EDGE_VALIDATION': {
-      const aiEdgeValidations = new Map(state.aiEdgeValidations);
-      aiEdgeValidations.set(action.validation.edgeId, action.validation);
-      return { ...state, aiEdgeValidations };
-    }
 
     case 'SET_AI_NOTABLE_CONTEXT': {
       const aiNotableContexts = new Map(state.aiNotableContexts);
@@ -523,8 +503,6 @@ export function treeReducer(state: TreeState, action: TreeAction): TreeState {
         },
         flags: [],
         conjectures: new Map(),
-        aiValidations: new Map(),
-        aiEdgeValidations: new Map(),
         aiNotableContexts: new Map(),
         aiBatchProgress: null,
         aiEnrichResults: new Map(),

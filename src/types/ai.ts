@@ -1,33 +1,6 @@
 import type { ConfidenceTier } from './common.ts';
 import type { EraTag, LocationContext } from '@/ai/era-context.ts';
 
-export interface AIPersonValidation {
-  personId: string;
-  summary: string;
-  suggestedTier: ConfidenceTier;
-  historicalNotes: string[];
-  sourceSuggestions: AISourceSuggestion[];
-  validatedAt: Date;
-  modelId: string;
-}
-
-export interface AISourceSuggestion {
-  sourceName: string;
-  repository: string;
-  url: string | null;
-  reasoning: string;
-}
-
-export interface AIEdgeValidation {
-  edgeId: string;
-  parentId: string;
-  childId: string;
-  plausibility: 'confirmed' | 'plausible' | 'unlikely' | 'implausible';
-  reasoning: string;
-  suggestedSources: string[];
-  validatedAt: Date;
-}
-
 export interface AINotableContext {
   personId: string;
   historicalContext: string;

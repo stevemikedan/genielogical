@@ -2,10 +2,6 @@ import { useCallback, useMemo, useRef } from 'react';
 import { useTree } from './use-tree.ts';
 import { getApiKey, sendMessage, sendAgentSearchMessage, sendSearchConversation } from '@/ai/ai-client.ts';
 import {
-  buildPersonValidationPrompt,
-  parsePersonValidation,
-  buildEdgeValidationPrompt,
-  parseEdgeValidation,
   buildNotableContextPrompt,
   parseNotableContext,
 } from '@/ai/validation-prompts.ts';
@@ -23,7 +19,7 @@ import { parseQuickCheckResult, parseValidationReport, parseDeepResearchRound } 
 import { computeEraTag, computeLocationContext } from '@/ai/era-context.ts';
 import { generateResearchQuestions } from '@/ai/question-generator.ts';
 import { convertToSource } from '@/ai/source-importer.ts';
-import type { AIPersonValidation, AIEdgeValidation, AINotableContext, AIEnrichResult, QuickCheckResult, ValidationReport, DeepResearchRound, DeepResearchTask, DiscoveredSourceImport } from '@/types/ai.ts';
+import type { AINotableContext, AIEnrichResult, QuickCheckResult, ValidationReport, DeepResearchRound, DeepResearchTask, DiscoveredSourceImport } from '@/types/ai.ts';
 import type { Person } from '@/types/person.ts';
 import type { Source } from '@/types/source.ts';
 import type { LLMMessage } from '@/ai/provider/types.ts';
@@ -33,61 +29,7 @@ export function useAI() {
 
   const hasApiKey = useMemo(() => getApiKey() !== null, []);
 
-  const validatePerson = useCallback(async (personId: string): Promise<AIPersonValidation | null> => {
-    const apiKey = getApiKey();
-    if (!apiKey || !state.graph) return null;
-
-    const person = state.graph.persons.get(personId);
-    if (!person) return null;
-
-    const parents = (state.graph.parentEdges.get(personId) ?? [])
-      .map(e => state.graph!.persons.get(e.parentId))
-      .filter((p): p is Person => p !== undefined);
-
-    const children = (state.graph.childEdges.get(personId) ?? [])
-      .map(e => state.graph!.persons.get(e.childId))
-      .filter((p): p is Person => p !== undefined);
-
-    const sources = person.sourceIds
-      .map(id => state.graph!.sources.get(id))
-      .filter((s): s is Source => s !== undefined);
-
-    const personFlags = state.flags.filter(f => f.affectedPersonIds.includes(personId));
-
-    const { system, user } = buildPersonValidationPrompt(person, parents, children, sources, personFlags);
-    const response = await sendMessage(apiKey, system, user);
-    const result = parsePersonValidation(personId, response.text);
-
-    if (result) {
-      dispatch({ type: 'SET_AI_VALIDATION', validation: result });
-    }
-    return result;
-  }, [state.graph, state.flags, dispatch]);
-
-  const validateEdge = useCallback(async (edgeId: string): Promise<AIEdgeValidation | null> => {
-    const apiKey = getApiKey();
-    if (!apiKey || !state.graph) return null;
-
-    const edge = state.graph.edges.get(edgeId);
-    if (!edge) return null;
-
-    const parent = state.graph.persons.get(edge.parentId);
-    const child = state.graph.persons.get(edge.childId);
-    if (!parent || !child) return null;
-
-    const sources = edge.sourceIds
-      .map(id => state.graph!.sources.get(id))
-      .filter((s): s is Source => s !== undefined);
-
-    const { system, user } = buildEdgeValidationPrompt(parent, child, edge, sources);
-    const response = await sendMessage(apiKey, system, user);
-    const result = parseEdgeValidation(edgeId, edge.parentId, edge.childId, response.text);
-
-    if (result) {
-      dispatch({ type: 'SET_AI_EDGE_VALIDATION', validation: result });
-    }
-    return result;
-  }, [state.graph, dispatch]);
+  // ── Notable Context (used by StoryCard) ──────────────────────────
 
   const getNotableContext = useCallback(async (personId: string, generationsFromSubject: number): Promise<AINotableContext | null> => {
     const apiKey = getApiKey();
@@ -106,17 +48,11 @@ export function useAI() {
     return result;
   }, [state.graph, dispatch]);
 
-  const getValidation = useCallback((personId: string): AIPersonValidation | undefined => {
-    return state.aiValidations.get(personId);
-  }, [state.aiValidations]);
-
-  const getEdgeValidation = useCallback((edgeId: string): AIEdgeValidation | undefined => {
-    return state.aiEdgeValidations.get(edgeId);
-  }, [state.aiEdgeValidations]);
-
   const getCachedNotableContext = useCallback((personId: string): AINotableContext | undefined => {
     return state.aiNotableContexts.get(personId);
   }, [state.aiNotableContexts]);
+
+  // ── Enrich (Record Completion) ───────────────────────────────────
 
   const enrichPerson = useCallback(async (personId: string, referenceUrls?: string[]): Promise<AIEnrichResult | null> => {
     const apiKey = getApiKey();
@@ -137,7 +73,6 @@ export function useAI() {
     const siblings = state.graph.getSiblings(personId);
 
     const { system, user } = buildEnrichPrompt(person, parents, children, spouses, siblings, referenceUrls);
-    // Use agentic search with web_search + web_fetch tools for real record lookups
     const response = await sendAgentSearchMessage(apiKey, system, user, {
       maxSearches: 8,
       maxFetches: referenceUrls && referenceUrls.length > 0 ? Math.max(5, referenceUrls.length + 2) : 5,
@@ -354,13 +289,10 @@ export function useAI() {
 
   return {
     hasApiKey,
-    // Legacy methods
-    validatePerson,
-    validateEdge,
+    // Notable context (StoryCard)
     getNotableContext,
-    getValidation,
-    getEdgeValidation,
     getCachedNotableContext,
+    // Enrich (record completion)
     enrichPerson,
     getEnrichResult,
     // Three-tier AI methods
