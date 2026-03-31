@@ -29,3 +29,7 @@ export function generateTreeId(): string {
 export function generateCrossTreeLinkId(): string {
   return generateId('xtl');
 }
+
+export function generateReportId(): string {
+  return generateId('rpt');
+}

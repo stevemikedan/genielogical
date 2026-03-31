@@ -59,6 +59,8 @@ describe('treeReducer', () => {
       ancestryConflicts: [],
       convergencePoints: [],
       researchSteps: [],
+      activeReport: null,
+      reportProgress: null,
     });
   });
 
@@ -273,6 +275,8 @@ describe('treeReducer', () => {
         ancestryConflicts: [],
         convergencePoints: [],
         researchSteps: [],
+        activeReport: null,
+        reportProgress: null,
       };
 
       const result = treeReducer(loadedState, { type: 'RESET' });
@@ -304,6 +308,8 @@ describe('treeReducer', () => {
         ancestryConflicts: [],
         convergencePoints: [],
         researchSteps: [],
+        activeReport: null,
+        reportProgress: null,
       };
 
       const result = treeReducer(errorState, { type: 'RESET' });

@@ -72,6 +72,8 @@ function renderWithContext(state: Partial<TreeState>, dispatch?: TreeState exten
     ancestryConflicts: [],
     convergencePoints: [],
     researchSteps: [],
+    activeReport: null,
+    reportProgress: null,
     ...state,
   };
 
@@ -263,8 +265,8 @@ describe('PersonList', () => {
       const graph = createMockGraph([john, jane, alice]);
       renderWithContext({ graph });
 
-      // Click the Name header button to toggle to desc
-      const nameHeader = screen.getByText(/^Name/);
+      // Click the Name column header button to toggle to desc
+      const nameHeader = screen.getByText(/Name.*\u25B2/);
       fireEvent.click(nameHeader);
 
       // Now sorted descending: Wonderland, Smith, Doe
@@ -295,7 +297,7 @@ describe('PersonList', () => {
       const graph = createMockGraph([john, jane]);
       renderWithContext({ graph });
 
-      // Default sort is name asc, so Name header should have up arrow
+      // Default sort is name asc, so Name column header should have up arrow
       const nameHeader = screen.getByText(/Name.*\u25B2/);
       expect(nameHeader).toBeInTheDocument();
     });
@@ -304,7 +306,7 @@ describe('PersonList', () => {
       const graph = createMockGraph([john, jane]);
       renderWithContext({ graph });
 
-      const nameHeader = screen.getByText(/^Name/);
+      const nameHeader = screen.getByText(/Name.*\u25B2/);
       fireEvent.click(nameHeader);
 
       // Now descending, should show down arrow

@@ -10,6 +10,7 @@ import type { StoryPathResult } from '@/types/story-path.ts';
 import type { ResearchPriority, ResearchStep } from '@/types/research.ts';
 import type { AINotableContext, AIEnrichResult, BatchProgress, QuickCheckResult, ValidationReport, DeepResearchRound } from '@/types/ai.ts';
 import type { AncestryConflict, ConvergencePoint } from '@/types/conflict.ts';
+import type { ReportResult, DataQualityReport, ReportProgress } from '@/types/report.ts';
 import { TreeGraph } from '@/graph/tree-graph.ts';
 import { scoreAllConfidence } from '@/engine/confidence-scorer.ts';
 
@@ -38,6 +39,8 @@ export interface TreeState {
   ancestryConflicts: AncestryConflict[];
   convergencePoints: ConvergencePoint[];
   researchSteps: ResearchStep[];
+  activeReport: ReportResult | DataQualityReport | null;
+  reportProgress: ReportProgress | null;
 }
 
 export type TreeAction =
@@ -77,7 +80,10 @@ export type TreeAction =
   | { type: 'SET_ANCESTRY_CONFLICTS'; conflicts: AncestryConflict[] }
   | { type: 'SET_CONVERGENCE_POINTS'; points: ConvergencePoint[] }
   | { type: 'EXPAND_TO_ANCESTOR'; targetPersonId: string | null }
-  | { type: 'LOAD_TREE'; graph: TreeGraph; flags: Flag[]; currentTreeId: string };
+  | { type: 'LOAD_TREE'; graph: TreeGraph; flags: Flag[]; currentTreeId: string }
+  | { type: 'SET_REPORT'; report: ReportResult | DataQualityReport }
+  | { type: 'SET_REPORT_PROGRESS'; progress: ReportProgress | null }
+  | { type: 'CLEAR_REPORT' };
 
 export const initialTreeState: TreeState = {
   phase: 'empty',
@@ -102,6 +108,8 @@ export const initialTreeState: TreeState = {
   ancestryConflicts: [],
   convergencePoints: [],
   researchSteps: [],
+  activeReport: null,
+  reportProgress: null,
 };
 
 function reScore(graph: TreeGraph, flags: Flag[]): void {
@@ -512,8 +520,19 @@ export function treeReducer(state: TreeState, action: TreeAction): TreeState {
         ancestryConflicts: [],
         convergencePoints: [],
         researchSteps: [],
+        activeReport: null,
+        reportProgress: null,
         error: null,
       };
     }
+
+    case 'SET_REPORT':
+      return { ...state, activeReport: action.report };
+
+    case 'SET_REPORT_PROGRESS':
+      return { ...state, reportProgress: action.progress };
+
+    case 'CLEAR_REPORT':
+      return { ...state, activeReport: null, reportProgress: null };
   }
 }

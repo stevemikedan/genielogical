@@ -14,3 +14,11 @@ export type { BranchAnalysis, DeepScanResult } from './deep-scan.ts';
 export type { AINotableContext, BatchValidationScope, BatchProgress, CostEstimate } from './ai.ts';
 export type { TreeMetadata } from './tree.ts';
 export type { CrossTreeLink } from './cross-tree-link.ts';
+export type { GeocodedPlace, GeocodeBatchProgress, PersonLocation } from './geocode.ts';
+export type {
+  ReportType, ReportStatus, AIDepth,
+  ReportConfig, ReportScope, ReportCandidate, ReportResult,
+  ReportMethodology, ReportStats,
+  DataQualityCandidate, DataQualityIssueType, DataQualityIssue, DataQualityReport,
+  BranchCoverageEntry, ReportProgress,
+} from './report.ts';
