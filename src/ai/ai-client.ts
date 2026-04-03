@@ -1,4 +1,4 @@
-import type { LLMMessage, LLMResponse } from './provider/types.ts';
+import type { LLMMessage, LLMResponse, LLMStreamCallbacks } from './provider/types.ts';
 import {
   getLegacyApiKey,
   setLegacyApiKey,
@@ -210,6 +210,52 @@ export async function sendSearchConversation(
     maxTokens: options?.maxTokens ?? 4096,
     tools,
   });
+}
+
+// ── Streaming API ────────────────────────────────────────────────────
+
+/**
+ * Send a multi-turn conversation with web search and streaming.
+ * Falls back to non-streaming sendSearchConversation if provider lacks streamMessage.
+ */
+export async function streamSearchConversation(
+  task: 'quickCheck' | 'validation' | 'deepResearch' | 'chat',
+  systemPrompt: string,
+  messages: LLMMessage[],
+  callbacks: LLMStreamCallbacks,
+  options?: {
+    maxTokens?: number;
+    maxSearches?: number;
+    maxFetches?: number;
+  },
+): Promise<LLMResponse | null> {
+  const provider = getProvider(task);
+  if (!provider) return null;
+
+  const tools = provider.capabilities.webSearch
+    ? [
+        { type: 'web_search', name: 'web_search', config: { maxSearches: options?.maxSearches ?? 8 } },
+        { type: 'web_fetch', name: 'web_fetch', config: { maxFetches: options?.maxFetches ?? 5 } },
+      ]
+    : undefined;
+
+  const request = {
+    systemPrompt,
+    messages,
+    maxTokens: options?.maxTokens ?? 4096,
+    tools,
+  };
+
+  // Use streaming if provider supports it
+  if (provider.streamMessage) {
+    return provider.streamMessage(request, callbacks);
+  }
+
+  // Fallback to non-streaming
+  const response = await provider.sendMessage(request);
+  callbacks.onTextDelta(response.content);
+  callbacks.onComplete?.();
+  return response;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

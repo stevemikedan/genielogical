@@ -49,16 +49,24 @@ export function ProofLadderSection({ proofLadder, onNavigate }: ProofLadderSecti
                 {i < proofLadder.links.length - 1 && <div className="w-px h-full min-h-[12px] bg-border" />}
               </div>
 
-              <div className={`flex items-center gap-1.5 py-0.5 ${isWeakest ? 'text-tier4' : ''}`}>
-                <button
-                  type="button"
-                  onClick={() => onNavigate(link.personId)}
-                  className="text-sm text-gold hover:text-gold-light transition-colors font-[family-name:var(--font-heading)] text-left"
-                >
-                  {link.personName}
-                </button>
-                {link.edgeTier !== null && (
-                  <ConfidenceBadge tier={link.edgeTier} />
+              <div className={`py-0.5 ${isWeakest ? 'text-tier4' : ''}`}>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onNavigate(link.personId)}
+                    className="text-sm text-gold hover:text-gold-light transition-colors font-[family-name:var(--font-heading)] text-left"
+                  >
+                    {link.personName}
+                  </button>
+                  {link.edgeTier !== null && (
+                    <ConfidenceBadge tier={link.edgeTier} />
+                  )}
+                </div>
+                {link.sharedWithPaths.length > 0 && (
+                  <div className="text-[10px] text-text-dim ml-0.5 mt-0.5">
+                    also on path to: {link.sharedWithPaths.slice(0, 3).join(', ')}
+                    {link.sharedWithPaths.length > 3 && ` +${link.sharedWithPaths.length - 3} more`}
+                  </div>
                 )}
               </div>
             </div>

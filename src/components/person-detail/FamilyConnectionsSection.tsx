@@ -75,6 +75,8 @@ export function FamilyConnectionsSection({
       sourceIds: [],
       flagIds: [],
       familyGedcomXref: null,
+      assertedBy: 'local_user',
+      assertedAt: new Date(),
       createdAt: new Date(),
     };
     dispatch({ type: 'ADD_EDGE', edge });

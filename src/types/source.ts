@@ -50,6 +50,9 @@ export interface Source {
 
   gedcomTag: string | null;
 
+  // Deduplication (Phase 2 prep)
+  sourceHash: string;     // Deterministic fingerprint of citation + URL
+
   addedAt: Date;
   addedBy: string;
 }

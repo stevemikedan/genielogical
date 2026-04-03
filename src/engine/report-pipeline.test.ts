@@ -50,6 +50,9 @@ function makePerson(id: string, overrides: Partial<Person> = {}): Person {
     gedcomXref: null,
     familyIdAsSpouse: [],
     familyIdAsChild: [],
+    identityHash: '',
+    privacyLevel: 'public',
+    externalIds: {},
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -62,7 +65,8 @@ function makeEdge(id: string, childId: string, parentId: string, tier: Confidenc
     relationshipType: 'biological', legitimacy: 'unknown', marriage: null,
     confidenceTier: tier, confidenceReason: '',
     parallelGroupId: null, isPrimary: true, pathLabel: null,
-    sourceIds: [], flagIds: [], familyGedcomXref: null, createdAt: new Date(),
+    sourceIds: [], flagIds: [], familyGedcomXref: null,
+    assertedBy: 'local_user', assertedAt: new Date(), createdAt: new Date(),
   };
 }
 
@@ -71,7 +75,7 @@ function makeSource(id: string): Source {
     id, origin: 'user_added', sourceClass: 'secondary', sourceType: 'vital_record',
     title: `Source ${id}`, citation: '', notes: '', url: null, repository: null,
     provesWhat: ['identity'], attachedToPersonIds: [], attachedToEdgeIds: [],
-    gedcomTag: null, addedAt: new Date(), addedBy: 'test',
+    gedcomTag: null, sourceHash: '', addedAt: new Date(), addedBy: 'test',
   };
 }
 

@@ -50,5 +50,9 @@ export interface Edge {
   // GEDCOM metadata
   familyGedcomXref: string | null;
 
+  // Provenance (Phase 2 prep)
+  assertedBy: string;    // 'gedcom_import' | 'local_user' | 'ai'
+  assertedAt: Date;
+
   createdAt: Date;
 }

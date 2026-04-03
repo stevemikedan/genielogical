@@ -16,6 +16,7 @@ import { AddPersonModal } from '@/components/shared/AddPersonModal.tsx';
 import { AddEdgeModal } from '@/components/shared/AddEdgeModal.tsx';
 import { TreeSelector } from '@/components/layout/TreeSelector.tsx';
 import { useWorkspace } from '@/hooks/use-workspace.ts';
+import { AISettingsModal } from '@/components/shared/AISettingsModal.tsx';
 import { useAutoSave } from '@/storage/auto-save.ts';
 
 type LoadedTab = 'tree' | 'health' | 'people' | 'deepScan' | 'reports';
@@ -27,6 +28,7 @@ function AppContent() {
   const [showAddPerson, setShowAddPerson] = useState(false);
   const [showAddEdge, setShowAddEdge] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [showAISettings, setShowAISettings] = useState(false);
 
   // Re-run Phase E engines when root person changes
   usePhaseEEngines(state.selectedPersonId, state.graph, dispatch);
@@ -209,6 +211,7 @@ function AppContent() {
               <div className="max-w-6xl mx-auto">
                 <ReportPanel
                   onSelectPerson={handleSelectPerson}
+                  onOpenSettings={() => setShowAISettings(true)}
                 />
               </div>
             )}
@@ -271,6 +274,10 @@ function AppContent() {
           graph={state.graph}
           onClose={() => setShowAddEdge(false)}
         />
+      )}
+
+      {showAISettings && (
+        <AISettingsModal onClose={() => setShowAISettings(false)} />
       )}
     </div>
   );

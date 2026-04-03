@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import type { ChatMessage as ChatMessageType } from '@/ai/chat/chat-session.ts';
 import { ChatActions } from './ChatActions.tsx';
+import { ChatCitations } from './ChatCitations.tsx';
 import type { ChatAction } from '@/ai/chat/chat-session.ts';
 import { formatCost } from '@/ai/cost-estimator.ts';
 
@@ -13,6 +14,25 @@ export const ChatMessage = memo(function ChatMessage({ message, onExecuteAction 
   const isUser = message.role === 'user';
 
   if (message.loading) {
+    // Streaming: show partial content with cursor
+    if (message.content) {
+      return (
+        <div className="flex gap-2 items-start">
+          <div className="w-6 h-6 rounded-full bg-gold/20 flex items-center justify-center flex-shrink-0 text-xs text-gold">
+            AI
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="bg-surface rounded-lg px-3 py-2 border border-border">
+              <div
+                className="text-sm text-text-primary whitespace-pre-wrap break-words prose-chat"
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) + '<span class="animate-pulse text-gold">|</span>' }}
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex gap-2 items-start">
         <div className="w-6 h-6 rounded-full bg-gold/20 flex items-center justify-center flex-shrink-0 text-xs text-gold">
@@ -65,6 +85,7 @@ export const ChatMessage = memo(function ChatMessage({ message, onExecuteAction 
           />
         </div>
         <ChatActions actions={message.actions} onExecute={onExecuteAction} />
+        <ChatCitations citations={message.citations} />
         {message.costUsd !== null && message.costUsd > 0 && (
           <div className="text-xs text-text-dim mt-1 text-right">
             ~{formatCost(message.costUsd)}

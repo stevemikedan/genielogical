@@ -26,6 +26,9 @@ function makePerson(id: string, name: string): Person {
     gedcomXref: null,
     familyIdAsSpouse: [],
     familyIdAsChild: [],
+    identityHash: '',
+    privacyLevel: 'public',
+    externalIds: {},
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -48,6 +51,9 @@ const baseContext: ChatContext = {
     topNotableAncestors: [],
     topFlags: [],
     overallHealthScore: 100,
+    generationalDistribution: [],
+    deepestAncestors: [],
+    tierDistribution: [],
   },
   selectedPersonContext: null,
 };
@@ -149,5 +155,89 @@ describe('extractActionsFromResponse', () => {
     const importAction = actions.find(a => a.type === 'import_source');
     expect(importAction).toBeDefined();
     expect(importAction!.data.sourceClass).toBe('primary');
+  });
+
+  // ── Flag detection ────────────────────────────────────────────────
+
+  it('detects flag suggestion from chronological impossibility', () => {
+    const context = { ...baseContext, selectedPersonId: 'p1' };
+    const response = 'The dates don\'t add up — a birth year of 1500 is chronological impossibility for this lineage.';
+    const actions = extractActionsFromResponse(response, context, null);
+    const flagAction = actions.find(a => a.type === 'create_flag');
+    expect(flagAction).toBeDefined();
+    expect(flagAction!.data.personId).toBe('p1');
+    expect(flagAction!.data.severity).toBe('critical');
+    expect(flagAction!.data.category).toBe('chronological');
+  });
+
+  it('detects flag suggestion for no evidence', () => {
+    const context = { ...baseContext, selectedPersonId: 'p2' };
+    const response = 'There is no evidence or documentation to support this claim.';
+    const actions = extractActionsFromResponse(response, context, null);
+    expect(actions.some(a => a.type === 'create_flag')).toBe(true);
+  });
+
+  it('does not create flag without selected person', () => {
+    const response = 'This data is wrong and should be flagged.';
+    const actions = extractActionsFromResponse(response, baseContext, null);
+    expect(actions.some(a => a.type === 'create_flag')).toBe(false);
+  });
+
+  // ── Conjecture detection ──────────────────────────────────────────
+
+  it('detects conjecture from hypothesis language', () => {
+    const context = { ...baseContext, selectedPersonId: 'p1' };
+    const response = 'My best guess is that these two families are connected through a marriage in the 1750s.';
+    const actions = extractActionsFromResponse(response, context, null);
+    const conjAction = actions.find(a => a.type === 'create_conjecture');
+    expect(conjAction).toBeDefined();
+    expect(conjAction!.data.personId).toBe('p1');
+    expect(conjAction!.data.hypothesis).toContain('best guess');
+  });
+
+  it('detects conjecture from speculation language', () => {
+    const context = { ...baseContext, selectedPersonId: 'p1' };
+    const response = 'This is speculative, but the name similarity suggests a connection.';
+    const actions = extractActionsFromResponse(response, context, null);
+    expect(actions.some(a => a.type === 'create_conjecture')).toBe(true);
+  });
+
+  it('does not create conjecture without selected person', () => {
+    const response = 'One hypothesis is that they migrated from Scotland.';
+    const actions = extractActionsFromResponse(response, baseContext, null);
+    expect(actions.some(a => a.type === 'create_conjecture')).toBe(false);
+  });
+
+  // ── Deep research detection ───────────────────────────────────────
+
+  it('detects deep research suggestion', () => {
+    const context = { ...baseContext, selectedPersonId: 'p1' };
+    const response = 'This connection needs deep research across multiple archives.';
+    const actions = extractActionsFromResponse(response, context, null);
+    expect(actions.some(a => a.type === 'run_deep_research')).toBe(true);
+  });
+
+  it('detects deep dive suggestion', () => {
+    const context = { ...baseContext, selectedPersonId: 'p1' };
+    const response = 'A deep dive into Scottish records would be valuable.';
+    const actions = extractActionsFromResponse(response, context, null);
+    expect(actions.some(a => a.type === 'run_deep_research')).toBe(true);
+  });
+
+  // ── Enhanced duplicate detection ──────────────────────────────────
+
+  it('extracts person IDs from duplicate analysis', () => {
+    const graph = makeGraph([
+      makePerson('p1', 'John Smith'),
+      makePerson('p2', 'John Smyth'),
+    ]);
+    const context = { ...baseContext, selectedPersonId: 'p1' };
+    const response = '**John Smith** and **John Smyth** are almost certainly the same person.';
+    const actions = extractActionsFromResponse(response, context, graph);
+    const dupAction = actions.find(a => a.type === 'mark_duplicate');
+    expect(dupAction).toBeDefined();
+    const personIds = dupAction!.data.personIds as string[];
+    expect(personIds).toContain('p1');
+    expect(personIds).toContain('p2');
   });
 });

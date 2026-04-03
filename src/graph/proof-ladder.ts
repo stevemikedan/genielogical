@@ -3,12 +3,15 @@ import type { Edge } from '@/types/edge.ts';
 import type { ConfidenceTier } from '@/types/common.ts';
 import type { BridgeZoneInfo } from './safe-to-share.ts';
 import { detectBridgeZones } from '@/engine/bridge-detector.ts';
+import type { NotableAncestor } from '@/types/story-path.ts';
 
 export interface ProofLink {
   personId: string;
   personName: string;
   edge: Edge | null;       // null for the root (start of chain)
   edgeTier: ConfidenceTier | null;
+  /** Names of notable ancestors whose path shares this link */
+  sharedWithPaths: string[];
 }
 
 export interface ProofLadder {
@@ -22,10 +25,14 @@ export interface ProofLadder {
  * Build a proof chain from the tree root down to the target person.
  * Follows primary parent edges upward from target to root, then reverses.
  * Returns the chain with the weakest link identified.
+ *
+ * When notableAncestors are provided, each link is annotated with the names
+ * of notable ancestors whose path shares that link (sharedWithPaths).
  */
 export function buildProofLadder(
   targetId: string,
   graph: TreeGraph,
+  notableAncestors?: NotableAncestor[],
 ): ProofLadder | null {
   const target = graph.persons.get(targetId);
   if (!target) return null;
@@ -78,7 +85,19 @@ export function buildProofLadder(
       weakestPersonId = personId;
     }
 
-    return { personId, personName, edge, edgeTier };
+    // Find notable ancestors whose path includes this person
+    const shared: string[] = [];
+    if (notableAncestors) {
+      for (const na of notableAncestors) {
+        // Don't include the target person itself in sharedWithPaths
+        if (na.personId === targetId) continue;
+        if (na.pathToSubject.includes(personId)) {
+          shared.push(na.name);
+        }
+      }
+    }
+
+    return { personId, personName, edge, edgeTier, sharedWithPaths: shared };
   });
 
   // Detect bridge zones in the chain

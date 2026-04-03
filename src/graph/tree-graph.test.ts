@@ -38,6 +38,9 @@ function makePerson(id: string, name: string): Person {
     gedcomXref: null,
     familyIdAsSpouse: [],
     familyIdAsChild: [],
+    identityHash: '',
+    privacyLevel: 'public',
+    externalIds: {},
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -64,6 +67,8 @@ function makeEdge(
     sourceIds: [],
     flagIds: [],
     familyGedcomXref: null,
+    assertedBy: 'local_user',
+    assertedAt: new Date(),
     createdAt: new Date(),
     ...options,
   };
@@ -170,6 +175,7 @@ describe('TreeGraph', () => {
         attachedToPersonIds: [],
         attachedToEdgeIds: [],
         gedcomTag: null,
+        sourceHash: '',
         addedAt: new Date(),
         addedBy: 'test',
       };

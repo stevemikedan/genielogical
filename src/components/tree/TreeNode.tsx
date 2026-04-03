@@ -19,6 +19,8 @@ interface TreeNodeProps {
   isOnHighlightPath?: boolean;
   isHighlightActive?: boolean;
   onExpand?: (personId: string) => void;
+  onCollapse?: (personId: string) => void;
+  isExpanded?: boolean;
   orientation?: TreeOrientation;
 }
 
@@ -82,6 +84,8 @@ export const TreeNode = memo(function TreeNode({
   isOnHighlightPath = false,
   isHighlightActive = false,
   onExpand,
+  onCollapse,
+  isExpanded = false,
   orientation = 'horizontal',
 }: TreeNodeProps) {
   const { person, hasFlags, isExpandable, expandableDepth } = node.data;
@@ -241,8 +245,41 @@ export const TreeNode = memo(function TreeNode({
         </text>
       )}
 
-      {/* Expand button (bottom-right, if expandable) — green with depth indicator */}
-      {isExpandable && onExpand && (
+      {/* Collapse button (bottom-right, if expanded) — red minus */}
+      {isExpanded && onCollapse && (
+        <g
+          onClick={(e) => {
+            e.stopPropagation();
+            onCollapse(person.id);
+          }}
+          style={{ cursor: 'pointer' }}
+        >
+          <rect
+            x={nodeWidth - 28}
+            y={nodeHeight - 22}
+            width={24}
+            height={20}
+            rx={4}
+            fill="#251a1a"
+            stroke="#f87171"
+            strokeWidth={1}
+          />
+          <text
+            x={nodeWidth - 16}
+            y={nodeHeight - 10}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fontSize={11}
+            fontWeight={600}
+            fill="#f87171"
+          >
+            {'\u2212'}
+          </text>
+        </g>
+      )}
+
+      {/* Expand button (bottom-right, if expandable and not already expanded) — green with depth indicator */}
+      {!isExpanded && isExpandable && onExpand && (
         <g
           onClick={(e) => {
             e.stopPropagation();

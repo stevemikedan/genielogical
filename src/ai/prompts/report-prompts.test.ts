@@ -29,6 +29,9 @@ function makePerson(overrides: Partial<Person> = {}): Person {
     gedcomXref: null,
     familyIdAsSpouse: [],
     familyIdAsChild: [],
+    identityHash: '',
+    privacyLevel: 'public',
+    externalIds: {},
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -95,6 +98,7 @@ describe('buildReportNarrativePrompt', () => {
       attachedToPersonIds: [],
       attachedToEdgeIds: [],
       gedcomTag: null,
+      sourceHash: '',
       addedAt: new Date(),
       addedBy: 'test',
     };

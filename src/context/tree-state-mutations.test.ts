@@ -30,6 +30,9 @@ function makePerson(id: string, name: string = 'Test Person'): Person {
     gedcomXref: null,
     familyIdAsSpouse: [],
     familyIdAsChild: [],
+    identityHash: '',
+    privacyLevel: 'public',
+    externalIds: {},
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -51,6 +54,8 @@ function makeEdge(id: string, parentId: string, childId: string): Edge {
     sourceIds: [],
     flagIds: [],
     familyGedcomXref: null,
+    assertedBy: 'local_user',
+    assertedAt: new Date(),
     createdAt: new Date(),
   };
 }
@@ -70,6 +75,7 @@ function makeSource(id: string, sourceClass: Source['sourceClass'] = 'secondary'
     attachedToPersonIds: [],
     attachedToEdgeIds: [],
     gedcomTag: null,
+    sourceHash: '',
     addedAt: new Date(),
     addedBy: 'test',
   };
@@ -293,13 +299,13 @@ describe('tree-state mutation actions', () => {
         id: 's1', origin: 'user_added', sourceClass: 'primary', sourceType: 'vital_record',
         title: 'Source 1', citation: '', notes: '', url: null, repository: null,
         provesWhat: [], attachedToPersonIds: ['keep'], attachedToEdgeIds: [],
-        gedcomTag: null, addedAt: new Date(), addedBy: 'test',
+        gedcomTag: null, sourceHash: '', addedAt: new Date(), addedBy: 'test',
       });
       state.graph!.sources.set('s2', {
         id: 's2', origin: 'user_added', sourceClass: 'secondary', sourceType: 'census',
         title: 'Source 2', citation: '', notes: '', url: null, repository: null,
         provesWhat: [], attachedToPersonIds: ['remove'], attachedToEdgeIds: [],
-        gedcomTag: null, addedAt: new Date(), addedBy: 'test',
+        gedcomTag: null, sourceHash: '', addedAt: new Date(), addedBy: 'test',
       });
 
       const result = treeReducer(state, { type: 'MERGE_PERSONS', keepId: 'keep', removeId: 'remove' });
@@ -329,6 +335,120 @@ describe('tree-state mutation actions', () => {
 
       const result = treeReducer(state, { type: 'MERGE_PERSONS', keepId: 'keep', removeId: 'remove' });
       expect(result.selectedPersonId).toBe('keep');
+    });
+
+    it('removes self-loop edge when merging parent-child', () => {
+      // grandparent → parent → child, but parent and child are actually the same person
+      state.graph!.addPerson(makePerson('grandparent', 'Grand Parent'));
+      state.graph!.addPerson(makePerson('parent', 'John Smith'));
+      state.graph!.addPerson(makePerson('child', 'John Smith Jr'));
+      state.graph!.addEdge(makeEdge('e1', 'grandparent', 'parent'));
+      state.graph!.addEdge(makeEdge('e2', 'parent', 'child'));
+
+      // Merge child into parent (they're the same person)
+      const result = treeReducer(state, { type: 'MERGE_PERSONS', keepId: 'parent', removeId: 'child' });
+
+      // e2 would become parent→parent (self-loop), so it should be removed
+      expect(result.graph!.edges.has('e2')).toBe(false);
+      // e1 (grandparent→parent) should still exist
+      expect(result.graph!.edges.has('e1')).toBe(true);
+      expect(result.graph!.getEdgeById('e1')?.parentId).toBe('grandparent');
+      expect(result.graph!.getEdgeById('e1')?.childId).toBe('parent');
+      // Only 2 persons remain
+      expect(result.graph!.persons.size).toBe(2);
+    });
+
+    it('preserves deeper ancestors when merging parent-child', () => {
+      // great-grandparent → grandparent → parent(keep) → child(remove)
+      state.graph!.addPerson(makePerson('ggp', 'Great Grandparent'));
+      state.graph!.addPerson(makePerson('gp', 'Grandparent'));
+      state.graph!.addPerson(makePerson('parent', 'Parent'));
+      state.graph!.addPerson(makePerson('child', 'Child'));
+      state.graph!.addPerson(makePerson('grandchild', 'Grandchild'));
+      state.graph!.addEdge(makeEdge('e1', 'ggp', 'gp'));
+      state.graph!.addEdge(makeEdge('e2', 'gp', 'parent'));
+      state.graph!.addEdge(makeEdge('e3', 'parent', 'child'));
+      state.graph!.addEdge(makeEdge('e4', 'child', 'grandchild'));
+
+      const result = treeReducer(state, { type: 'MERGE_PERSONS', keepId: 'parent', removeId: 'child' });
+
+      // Self-loop e3 removed, e4 reassigned: parent → grandchild
+      expect(result.graph!.edges.has('e3')).toBe(false);
+      expect(result.graph!.getEdgeById('e4')?.parentId).toBe('parent');
+      expect(result.graph!.getEdgeById('e4')?.childId).toBe('grandchild');
+      // Ancestors preserved
+      expect(result.graph!.getEdgeById('e1')?.parentId).toBe('ggp');
+      expect(result.graph!.getEdgeById('e2')?.childId).toBe('parent');
+      expect(result.graph!.persons.size).toBe(4);
+    });
+
+    it('deduplicates edges with same parent-child pair after merge', () => {
+      // Both parent and duplicate have edges to the same child
+      state.graph!.addPerson(makePerson('keep', 'John Smith'));
+      state.graph!.addPerson(makePerson('remove', 'Jon Smith'));
+      state.graph!.addPerson(makePerson('child', 'Child'));
+      const e1 = makeEdge('e1', 'keep', 'child');
+      e1.sourceIds = ['s1'];
+      const e2 = makeEdge('e2', 'remove', 'child');
+      e2.sourceIds = ['s2', 's3'];
+      state.graph!.addEdge(e1);
+      state.graph!.addEdge(e2);
+
+      const result = treeReducer(state, { type: 'MERGE_PERSONS', keepId: 'keep', removeId: 'remove' });
+
+      // Only one edge to child should remain
+      const childEdges = [...result.graph!.edges.values()].filter(e => e.childId === 'child');
+      expect(childEdges).toHaveLength(1);
+      // Sources from both edges should be merged
+      const edge = childEdges[0];
+      expect(edge.sourceIds).toContain('s1');
+      expect(edge.sourceIds).toContain('s2');
+      expect(edge.sourceIds).toContain('s3');
+    });
+
+    it('merges person data fields (names, events, notes, customTags)', () => {
+      const keep = makePerson('keep', 'John Smith');
+      keep.notes = 'Note A';
+      keep.events = [{ type: 'census', date: { date: new Date('1900-01-01'), endDate: null, qualifier: 'exact', raw: '1 Jan 1900', year: 1900 }, place: null, notes: 'Census 1900', sourceIds: [] }];
+      keep.customTags = [{ key: 'occupation', value: 'farmer' }];
+      keep.researchStepIds = ['rs1'];
+
+      const remove = makePerson('remove', 'Jon Smith');
+      remove.notes = 'Note B';
+      remove.events = [{ type: 'immigration', date: { date: new Date('1895-01-01'), endDate: null, qualifier: 'exact', raw: '1895', year: 1895 }, place: null, notes: 'Immigration 1895', sourceIds: [] }];
+      remove.customTags = [{ key: 'religion', value: 'Presbyterian' }];
+      remove.researchStepIds = ['rs2'];
+      remove.conjectureIds = ['c1'];
+
+      state.graph!.addPerson(keep);
+      state.graph!.addPerson(remove);
+
+      const result = treeReducer(state, { type: 'MERGE_PERSONS', keepId: 'keep', removeId: 'remove' });
+
+      const merged = result.graph!.getPersonById('keep')!;
+      // Alternate name saved
+      expect(merged.alternateNames).toHaveLength(1);
+      expect(merged.alternateNames[0].name.full).toBe('Jon Smith');
+      // Notes merged
+      expect(merged.notes).toContain('Note A');
+      expect(merged.notes).toContain('Note B');
+      // Events merged
+      expect(merged.events).toHaveLength(2);
+      // Custom tags merged
+      expect(merged.customTags).toHaveLength(2);
+      // Research step IDs merged
+      expect(merged.researchStepIds).toContain('rs1');
+      expect(merged.researchStepIds).toContain('rs2');
+      // Conjecture IDs merged
+      expect(merged.conjectureIds).toContain('c1');
+    });
+
+    it('does not add alternate name when names are identical', () => {
+      state.graph!.addPerson(makePerson('keep', 'John Smith'));
+      state.graph!.addPerson(makePerson('remove', 'John Smith'));
+
+      const result = treeReducer(state, { type: 'MERGE_PERSONS', keepId: 'keep', removeId: 'remove' });
+      expect(result.graph!.getPersonById('keep')!.alternateNames).toHaveLength(0);
     });
   });
 

@@ -4,6 +4,7 @@
 
 import type { Source } from '@/types/source.ts';
 import type { GedcomNode } from './record-builder.ts';
+import { computeSourceHash } from '@/utils/identity-hash.ts';
 
 /**
  * Find a direct child node by tag.
@@ -59,6 +60,7 @@ export function extractSource(node: GedcomNode): Source {
     attachedToPersonIds: [],
     attachedToEdgeIds: [],
     gedcomTag: xref || null,
+    sourceHash: computeSourceHash(citation, null),
     addedAt: new Date(),
     addedBy: 'gedcom_import',
   };

@@ -1,6 +1,7 @@
 import type { Source, SourceType, ProvesWhat } from '@/types/source.ts';
 import type { DiscoveredSourceImport, FoundRecord } from '@/types/ai.ts';
 import { generateSourceId } from '@/utils/id-generator.ts';
+import { computeSourceHash } from '@/utils/identity-hash.ts';
 
 // ── SourceType mapping ──────────────────────────────────────────────
 
@@ -55,6 +56,7 @@ export function convertToSource(
     attachedToPersonIds,
     attachedToEdgeIds,
     gedcomTag: null,
+    sourceHash: computeSourceHash(discovered.title, discovered.url),
     addedAt: new Date(),
     addedBy: 'ai',
   };

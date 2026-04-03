@@ -2,8 +2,10 @@ import { useMemo, useState } from 'react';
 import type { Person } from '@/types/index.ts';
 import { useTree } from '@/hooks/index.ts';
 import { formatDisplayName } from '@/utils/name-display.ts';
+import { matchesPlaceQuery } from '@/utils/place-search.ts';
 
-type SortField = 'name' | 'birth' | 'death' | 'sources';
+type SearchMode = 'name' | 'place';
+type SortField = 'name' | 'birth' | 'death' | 'sources' | 'place';
 type SortDir = 'asc' | 'desc';
 
 function formatYear(person: Person, field: 'birth' | 'death'): string {
@@ -22,6 +24,7 @@ function getSortValue(person: Person, field: SortField): string | number {
     case 'birth': return person.birth?.date?.year ?? 99999;
     case 'death': return person.death?.date?.year ?? 99999;
     case 'sources': return person.sourceIds.length;
+    case 'place': return (person.birth?.place?.raw ?? '').toLowerCase();
   }
 }
 
@@ -29,6 +32,7 @@ export function PersonList() {
   const { state, dispatch } = useTree();
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [searchMode, setSearchMode] = useState<SearchMode>('name');
 
   const graph = state.graph;
   const searchQuery = state.searchQuery;
@@ -36,15 +40,21 @@ export function PersonList() {
   const filtered = useMemo(() => {
     if (!graph) return [];
     const persons = Array.from(graph.persons.values());
-    const q = searchQuery.toLowerCase().trim();
+    const q = searchQuery.trim();
     if (!q) return persons;
+
+    if (searchMode === 'place') {
+      return persons.filter(p => matchesPlaceQuery(p, q));
+    }
+
+    const ql = q.toLowerCase();
     return persons.filter(p => {
       const name = p.name.full.toLowerCase();
       const given = p.name.given.toLowerCase();
       const surname = p.name.surname.toLowerCase();
-      return name.includes(q) || given.includes(q) || surname.includes(q);
+      return name.includes(ql) || given.includes(ql) || surname.includes(ql);
     });
-  }, [graph, searchQuery]);
+  }, [graph, searchQuery, searchMode]);
 
   const sorted = useMemo(() => {
     const list = [...filtered];
@@ -82,17 +92,35 @@ export function PersonList() {
             ({filtered.length.toLocaleString()}{searchQuery ? ` of ${graph?.persons.size.toLocaleString()}` : ''})
           </span>
         </h2>
-        <input
-          type="text"
-          placeholder="Search names..."
-          value={searchQuery}
-          onChange={e => dispatch({ type: 'SET_SEARCH', query: e.target.value })}
-          className="bg-surface border border-border rounded px-3 py-1.5 text-sm text-text-primary placeholder:text-text-dim focus:border-gold focus:outline-none w-64"
-        />
+        <div className="flex items-center gap-2">
+          <div className="flex rounded overflow-hidden border border-border">
+            {(['name', 'place'] as const).map(mode => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setSearchMode(mode)}
+                className={`px-2 py-1 text-xs font-medium transition-colors ${
+                  searchMode === mode
+                    ? 'bg-gold text-bg'
+                    : 'bg-surface text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                {mode === 'name' ? 'Name' : 'Place'}
+              </button>
+            ))}
+          </div>
+          <input
+            type="text"
+            placeholder={searchMode === 'name' ? 'Search names...' : 'Search places...'}
+            value={searchQuery}
+            onChange={e => dispatch({ type: 'SET_SEARCH', query: e.target.value })}
+            className="bg-surface border border-border rounded px-3 py-1.5 text-sm text-text-primary placeholder:text-text-dim focus:border-gold focus:outline-none w-64"
+          />
+        </div>
       </div>
 
       <div className="border border-border rounded-lg overflow-hidden">
-        <div className="grid grid-cols-[1fr_80px_80px_80px_100px] bg-surface-hover text-xs text-text-dim font-medium uppercase tracking-wider">
+        <div className="grid grid-cols-[1fr_80px_80px_80px_1fr] bg-surface-hover text-xs text-text-dim font-medium uppercase tracking-wider">
           <button type="button" className="text-left px-4 py-2 hover:text-text-secondary" onClick={() => toggleSort('name')}>
             Name{sortIndicator('name')}
           </button>
@@ -105,7 +133,9 @@ export function PersonList() {
           <button type="button" className="text-left px-2 py-2 hover:text-text-secondary" onClick={() => toggleSort('sources')}>
             Sources{sortIndicator('sources')}
           </button>
-          <div className="px-2 py-2">Birth Place</div>
+          <button type="button" className="text-left px-2 py-2 hover:text-text-secondary" onClick={() => toggleSort('place')}>
+            Birth Place{sortIndicator('place')}
+          </button>
         </div>
 
         <div className="max-h-[60vh] overflow-y-auto">
@@ -115,7 +145,7 @@ export function PersonList() {
               type="button"
               onClick={() => dispatch({ type: 'SELECT_PERSON', personId: person.id })}
               className={`
-                grid grid-cols-[1fr_80px_80px_80px_100px] w-full text-left text-sm border-t border-border
+                grid grid-cols-[1fr_80px_80px_80px_1fr] w-full text-left text-sm border-t border-border
                 hover:bg-surface-hover transition-colors cursor-pointer
                 ${state.selectedPersonId === person.id ? 'bg-surface-hover border-l-2 border-l-gold' : ''}
               `}

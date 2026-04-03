@@ -182,6 +182,9 @@ export function AIEnrichSection({ personId }: AIEnrichSectionProps) {
             gedcomXref: null,
             familyIdAsSpouse: [],
             familyIdAsChild: [],
+            identityHash: '',
+            privacyLevel: 'public',
+            externalIds: {},
             createdAt: new Date(),
             updatedAt: new Date(),
           };
@@ -206,6 +209,8 @@ export function AIEnrichSection({ personId }: AIEnrichSectionProps) {
                 sourceIds: [],
                 flagIds: [],
                 familyGedcomXref: null,
+                assertedBy: 'ai',
+                assertedAt: new Date(),
                 createdAt: new Date(),
               },
             });
@@ -230,6 +235,8 @@ export function AIEnrichSection({ personId }: AIEnrichSectionProps) {
                   sourceIds: [],
                   flagIds: [],
                   familyGedcomXref: null,
+                  assertedBy: 'ai',
+                  assertedAt: new Date(),
                   createdAt: new Date(),
                 },
               });
@@ -272,6 +279,9 @@ export function AIEnrichSection({ personId }: AIEnrichSectionProps) {
             gedcomXref: null,
             familyIdAsSpouse: [],
             familyIdAsChild: [],
+            identityHash: '',
+            privacyLevel: 'public',
+            externalIds: {},
             createdAt: new Date(),
             updatedAt: new Date(),
           };

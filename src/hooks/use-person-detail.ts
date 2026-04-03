@@ -7,6 +7,7 @@ import type { Conjecture } from '@/types/conjecture.ts';
 import type { TreeGraph } from '@/graph/tree-graph.ts';
 import { buildProofLadder } from '@/graph/proof-ladder.ts';
 import type { ProofLadder } from '@/graph/proof-ladder.ts';
+import type { NotableAncestor } from '@/types/story-path.ts';
 
 export interface ParentWithEdge {
   person: Person;
@@ -32,6 +33,7 @@ export function usePersonDetail(
   graph: TreeGraph | null,
   flags: Flag[],
   conjectures: Map<string, Conjecture>,
+  notableAncestors?: NotableAncestor[],
 ): PersonDetail | null {
   return useMemo(() => {
     if (!personId || !graph) return null;
@@ -82,8 +84,8 @@ export function usePersonDetail(
       if (c) personConjectures.push(c);
     }
 
-    // Proof ladder
-    const proofLadder = buildProofLadder(personId, graph);
+    // Proof ladder (with notable ancestor path cross-references)
+    const proofLadder = buildProofLadder(personId, graph, notableAncestors);
 
     return {
       person,
@@ -98,5 +100,5 @@ export function usePersonDetail(
       conjectures: personConjectures,
       proofLadder,
     };
-  }, [personId, graph, flags, conjectures]);
+  }, [personId, graph, flags, conjectures, notableAncestors]);
 }
