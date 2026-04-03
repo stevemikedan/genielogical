@@ -14,6 +14,7 @@ import type { Source } from '@/types/source.ts';
 import type { Flag } from '@/types/flag.ts';
 import type { TreeMetadata } from '@/types/tree.ts';
 import type { CrossTreeLink } from '@/types/cross-tree-link.ts';
+import type { GeocodedPlace } from '@/types/geocode.ts';
 
 // ── Storage record types (Person/Edge/Source/Flag + treeId) ────────
 
@@ -53,10 +54,14 @@ interface GenieLogicalDB extends DBSchema {
     key: string;
     value: CrossTreeLink;
   };
+  geocache: {
+    key: string;
+    value: { query: string; result: GeocodedPlace | null; createdAt: Date };
+  };
 }
 
 const DB_NAME = 'genielogical';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBPDatabase<GenieLogicalDB>> | null = null;
 
@@ -66,7 +71,7 @@ let dbPromise: Promise<IDBPDatabase<GenieLogicalDB>> | null = null;
 export function getDb(): Promise<IDBPDatabase<GenieLogicalDB>> {
   if (!dbPromise) {
     dbPromise = openDB<GenieLogicalDB>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
+      upgrade(db, oldVersion) {
         // Trees store
         if (!db.objectStoreNames.contains('trees')) {
           db.createObjectStore('trees', { keyPath: 'id' });
@@ -99,6 +104,13 @@ export function getDb(): Promise<IDBPDatabase<GenieLogicalDB>> {
         // Cross-tree links store
         if (!db.objectStoreNames.contains('crossTreeLinks')) {
           db.createObjectStore('crossTreeLinks', { keyPath: 'id' });
+        }
+
+        // v2: geocache store
+        if (oldVersion < 2) {
+          if (!db.objectStoreNames.contains('geocache')) {
+            db.createObjectStore('geocache', { keyPath: 'query' });
+          }
         }
       },
     });

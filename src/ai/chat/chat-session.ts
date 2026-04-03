@@ -11,6 +11,8 @@ export interface ChatMessage {
   content: string;
   /** Actions extracted from this message (assistant only) */
   actions: ChatAction[];
+  /** Web search citations from the AI response (assistant only) */
+  citations: ChatCitation[];
   /** Cost of this individual API call in USD (assistant only) */
   costUsd: number | null;
   /** Timestamp */
@@ -19,6 +21,12 @@ export interface ChatMessage {
   loading?: boolean;
   /** Error message if the API call failed */
   error?: string | null;
+}
+
+export interface ChatCitation {
+  url: string;
+  title: string | null;
+  citedText: string;
 }
 
 export interface ChatAction {
@@ -31,6 +39,7 @@ export type ChatActionType =
   | 'import_source'
   | 'open_person'
   | 'mark_duplicate'
+  | 'merge_persons'
   | 'create_flag'
   | 'create_conjecture'
   | 'add_research_step'

@@ -7,6 +7,7 @@ import type { LifeEvent } from '@/types/common.ts';
 import type { GedcomNode } from './record-builder.ts';
 import { parseGedcomDate } from './date-normalizer.ts';
 import { normalizePlace } from './place-normalizer.ts';
+import { computeIdentityHash, inferPrivacyLevel } from '@/utils/identity-hash.ts';
 
 /** Map GEDCOM event tags to LifeEvent type values */
 const EVENT_TAG_MAP: Record<string, LifeEvent['type']> = {
@@ -255,6 +256,11 @@ export function extractPerson(node: GedcomNode): Person {
   const familyIdAsSpouse = findChildren(node, 'FAMS').map((n) => n.value).filter(Boolean);
   const familyIdAsChild = findChildren(node, 'FAMC').map((n) => n.value).filter(Boolean);
 
+  const hasDeath = death.date !== null;
+  const birthYear = birth.date?.year ?? null;
+  const birthCountry = birth.place?.country ?? null;
+  const deathYear = death.date?.year ?? null;
+
   return {
     id: xref,
     name,
@@ -282,6 +288,9 @@ export function extractPerson(node: GedcomNode): Person {
     gedcomXref: xref || null,
     familyIdAsSpouse,
     familyIdAsChild,
+    identityHash: computeIdentityHash(name.surname, name.given, birthYear, birthCountry, deathYear),
+    privacyLevel: inferPrivacyLevel(hasDeath, birthYear),
+    externalIds: {},
     createdAt: now,
     updatedAt: now,
   };

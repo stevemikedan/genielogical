@@ -124,6 +124,8 @@ export function buildEdges(
           sourceIds: [...fam.sourceIds],
           flagIds: [],
           familyGedcomXref: fam.id || null,
+          assertedBy: 'gedcom_import',
+          assertedAt: now,
           createdAt: now,
         });
       }

@@ -40,7 +40,7 @@ export const FanChartView = forwardRef<FanChartViewHandle, FanChartViewProps>(
     // Compute layout
     const layout = useMemo(() => {
       return computeFanChartLayout(rootPersonId, graph, {
-        maxGenerations: Math.min(maxGenerations, 15), // cap for performance
+        maxGenerations: Math.min(maxGenerations, 20), // cap for performance
         mode: fanMode,
         showEmptySlots: true,
       });
@@ -119,12 +119,12 @@ export const FanChartView = forwardRef<FanChartViewHandle, FanChartViewProps>(
 
     const handleZoomIn = useCallback(() => {
       if (!svgRef.current || !zoomRef.current) return;
-      d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1.3);
+      d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1.5);
     }, []);
 
     const handleZoomOut = useCallback(() => {
       if (!svgRef.current || !zoomRef.current) return;
-      d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1 / 1.3);
+      d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1 / 1.5);
     }, []);
 
     const handleCenterOnSelected = useCallback(() => {

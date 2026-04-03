@@ -21,8 +21,18 @@ export interface LLMProvider {
   /** Send a message (single- or multi-turn) and get a response. */
   sendMessage(request: LLMRequest): Promise<LLMResponse>;
 
+  /** Send a message with streaming support. Returns the final LLMResponse when complete. */
+  streamMessage?(request: LLMRequest, callbacks: LLMStreamCallbacks): Promise<LLMResponse>;
+
   /** Validate that the connection works (test API key, check model). */
   testConnection(): Promise<{ ok: boolean; error?: string }>;
+}
+
+export interface LLMStreamCallbacks {
+  /** Called when a text delta is received during streaming. */
+  onTextDelta: (delta: string) => void;
+  /** Called when streaming completes (before the promise resolves). */
+  onComplete?: () => void;
 }
 
 export interface ProviderCapabilities {

@@ -11,6 +11,8 @@ interface PedigreeGridNodeProps {
   isSelected: boolean;
   onClick: (personId: string) => void;
   onExpand?: (personId: string) => void;
+  onCollapse?: (personId: string) => void;
+  isExpanded?: boolean;
   onExpandAll?: (personId: string) => void;
 }
 
@@ -44,6 +46,8 @@ export const PedigreeGridNode = memo(function PedigreeGridNode({
   isSelected,
   onClick,
   onExpand,
+  onCollapse,
+  isExpanded = false,
   onExpandAll,
 }: PedigreeGridNodeProps) {
   const person = node.person;
@@ -160,8 +164,54 @@ export const PedigreeGridNode = memo(function PedigreeGridNode({
         </text>
       )}
 
-      {/* Expand button (right edge) */}
-      {node.isExpandable && onExpand && (
+      {/* Spouse inline text (only shown when spouse exists and card is tall enough) */}
+      {node.spouse && nodeHeight >= 55 && (
+        <text
+          x={accentWidth + 8}
+          y={nodeHeight * 0.9}
+          dominantBaseline="central"
+          fill="#9a8250"
+          fontSize={10}
+          fontFamily="var(--font-body)"
+          opacity={0.7}
+        >
+          {`m. ${truncateName(node.spouse.name.given || node.spouse.name.full, Math.floor((nodeWidth - 50) / 6))}`}
+        </text>
+      )}
+
+      {/* Collapse button (right edge, when expanded) */}
+      {isExpanded && onCollapse && (
+        <g
+          onClick={(e) => {
+            e.stopPropagation();
+            onCollapse(person.id);
+          }}
+          style={{ cursor: 'pointer' }}
+        >
+          <circle
+            cx={nodeWidth + 12}
+            cy={nodeHeight / 2}
+            r={10}
+            fill="#251a1a"
+            stroke="#f87171"
+            strokeWidth={1}
+          />
+          <text
+            x={nodeWidth + 12}
+            y={nodeHeight / 2}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fontSize={12}
+            fontWeight={600}
+            fill="#f87171"
+          >
+            {'\u2212'}
+          </text>
+        </g>
+      )}
+
+      {/* Expand button (right edge, when not expanded) */}
+      {!isExpanded && node.isExpandable && onExpand && (
         <g
           onClick={(e) => {
             e.stopPropagation();
@@ -191,8 +241,8 @@ export const PedigreeGridNode = memo(function PedigreeGridNode({
         </g>
       )}
 
-      {/* Expand-all button (right edge, below expand) */}
-      {node.isExpandable && onExpandAll && (
+      {/* Expand-all button (right edge, below expand — only when not expanded) */}
+      {!isExpanded && node.isExpandable && onExpandAll && (
         <g
           onClick={(e) => {
             e.stopPropagation();

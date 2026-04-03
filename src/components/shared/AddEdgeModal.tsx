@@ -73,6 +73,8 @@ export function AddEdgeModal({ graph, onClose, presetChildId, presetParentId }: 
         sourceIds: [],
         flagIds: [],
         familyGedcomXref: null,
+        assertedBy: 'local_user',
+        assertedAt: new Date(),
         createdAt: new Date(),
       },
     });

@@ -3,6 +3,7 @@ import { useChat } from '@/hooks/use-chat.ts';
 import { ChatMessage } from './ChatMessage.tsx';
 import { ChatInput } from './ChatInput.tsx';
 import { ChatCostTracker } from './ChatCostTracker.tsx';
+import { MergePersonsModal } from '@/components/layout/MergePersonsModal.tsx';
 
 interface ChatPanelProps {
   activeView: string;
@@ -14,11 +15,15 @@ export function ChatPanel({ activeView, onClose }: ChatPanelProps) {
     session,
     hasApiKey,
     showBudgetWarning,
+    suggestedPrompts,
+    followUpSuggestions,
     sendMessage,
     cancelMessage,
     clearSession,
     dismissBudgetWarning,
     executeAction,
+    mergeRequest,
+    clearMergeRequest,
   } = useChat(activeView);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -91,17 +96,17 @@ export function ChatPanel({ activeView, onClose }: ChatPanelProps) {
               Ask me about your tree, research ancestors, or describe sources you've found.
             </p>
             <div className="space-y-2">
-              {SUGGESTED_PROMPTS.map((prompt, i) => (
+              {suggestedPrompts.map((prompt, i) => (
                 <button
                   key={i}
                   type="button"
-                  onClick={() => sendMessage(prompt)}
+                  onClick={() => sendMessage(prompt.text)}
                   disabled={!hasApiKey}
                   className="block w-full text-left px-3 py-2 rounded-lg border border-border
                              text-sm text-text-secondary hover:text-text-primary hover:border-gold/30
                              hover:bg-surface transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 >
-                  {prompt}
+                  {prompt.text}
                 </button>
               ))}
             </div>
@@ -117,6 +122,23 @@ export function ChatPanel({ activeView, onClose }: ChatPanelProps) {
         ))}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Follow-up suggestions */}
+      {followUpSuggestions.length > 0 && !session.isLoading && session.messages.length > 0 && (
+        <div className="px-4 py-2 border-t border-border/50 flex flex-wrap gap-1.5">
+          {followUpSuggestions.map((suggestion, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => sendMessage(suggestion)}
+              className="text-xs px-2.5 py-1 rounded-full border border-gold/20 text-text-secondary
+                         hover:text-gold hover:border-gold/40 hover:bg-gold/5 transition-colors"
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Input */}
       <div className="border-t border-border px-4 py-3 flex-shrink-0">
@@ -140,13 +162,13 @@ export function ChatPanel({ activeView, onClose }: ChatPanelProps) {
           <ChatInput onSend={sendMessage} />
         )}
       </div>
+      {mergeRequest && (
+        <MergePersonsModal
+          personIdA={mergeRequest.personIdA}
+          personIdB={mergeRequest.personIdB}
+          onClose={clearMergeRequest}
+        />
+      )}
     </div>
   );
 }
-
-const SUGGESTED_PROMPTS = [
-  "What's interesting about my tree?",
-  "Which ancestors need the most research?",
-  "Are there any potential duplicates?",
-  "What notable ancestors do I have?",
-];

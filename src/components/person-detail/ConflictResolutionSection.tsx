@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { useTree } from '@/hooks/use-tree.ts';
 import type { AncestryConflict } from '@/types/conflict.ts';
+import type { MergeDecision } from '@/types/conflict.ts';
 
 interface ConflictResolutionSectionProps {
   personId: string;
@@ -23,7 +25,7 @@ const CONFLICT_SEVERITY: Record<string, string> = {
 };
 
 export function ConflictResolutionSection({ personId, onNavigate }: ConflictResolutionSectionProps) {
-  const { state } = useTree();
+  const { state, dispatch } = useTree();
 
   const conflicts = state.ancestryConflicts.filter(
     c => c.personIdA === personId || c.personIdB === personId,
@@ -39,7 +41,13 @@ export function ConflictResolutionSection({ personId, onNavigate }: ConflictReso
 
       <div className="space-y-2">
         {conflicts.map((conflict, i) => (
-          <ConflictCard key={i} conflict={conflict} currentPersonId={personId} onNavigate={onNavigate} />
+          <ConflictCard
+            key={i}
+            conflict={conflict}
+            currentPersonId={personId}
+            onNavigate={onNavigate}
+            onResolve={(decision) => dispatch({ type: 'RESOLVE_ANCESTRY_CONFLICT', decision })}
+          />
         ))}
       </div>
     </div>
@@ -50,12 +58,42 @@ function ConflictCard({
   conflict,
   currentPersonId,
   onNavigate,
+  onResolve,
 }: {
   conflict: AncestryConflict;
   currentPersonId: string;
   onNavigate?: (id: string) => void;
+  onResolve: (decision: MergeDecision) => void;
 }) {
+  const [confirmAction, setConfirmAction] = useState<'merge_a' | 'merge_b' | 'parallel' | null>(null);
   const otherPersonId = conflict.personIdA === currentPersonId ? conflict.personIdB : conflict.personIdA;
+
+  const handleResolve = (action: 'merge_a' | 'merge_b' | 'parallel') => {
+    if (action === 'parallel') {
+      onResolve({
+        winnerPersonId: conflict.personIdA,
+        loserPersonId: conflict.personIdB,
+        action: 'convert_to_parallel',
+        preserveLoserSources: true,
+        preserveLoserNotes: true,
+        reparentDescendants: false,
+        orphanUpstream: false,
+      });
+    } else {
+      const winnerId = action === 'merge_a' ? conflict.personIdA : conflict.personIdB;
+      const loserId = action === 'merge_a' ? conflict.personIdB : conflict.personIdA;
+      onResolve({
+        winnerPersonId: winnerId,
+        loserPersonId: loserId,
+        action: 'merge_keep_winner',
+        preserveLoserSources: true,
+        preserveLoserNotes: true,
+        reparentDescendants: true,
+        orphanUpstream: false,
+      });
+    }
+    setConfirmAction(null);
+  };
 
   return (
     <div className="rounded border border-border bg-bg p-3 space-y-2">
@@ -87,17 +125,64 @@ function ConflictCard({
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-2 pt-1">
-        {onNavigate && (
+      {confirmAction === null ? (
+        <div className="flex items-center gap-2 pt-1 flex-wrap">
+          {onNavigate && (
+            <button
+              type="button"
+              onClick={() => onNavigate(otherPersonId)}
+              className="text-xs text-gold hover:text-gold-light transition-colors"
+            >
+              View other version
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => onNavigate(otherPersonId)}
-            className="text-xs text-gold hover:text-gold-light transition-colors"
+            onClick={() => setConfirmAction('merge_a')}
+            className="text-xs px-2 py-0.5 border border-tier1 text-tier1 rounded hover:bg-tier1/10 transition-colors"
           >
-            View other version
+            Keep A
           </button>
-        )}
-      </div>
+          <button
+            type="button"
+            onClick={() => setConfirmAction('merge_b')}
+            className="text-xs px-2 py-0.5 border border-tier2 text-tier2 rounded hover:bg-tier2/10 transition-colors"
+          >
+            Keep B
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmAction('parallel')}
+            className="text-xs px-2 py-0.5 border border-border text-text-secondary rounded hover:bg-surface transition-colors"
+          >
+            Keep both (parallel)
+          </button>
+        </div>
+      ) : (
+        <div className="pt-1 space-y-1.5">
+          <p className="text-xs text-tier3">
+            {confirmAction === 'parallel'
+              ? 'Mark as parallel paths? Both versions will be kept with the loser marked non-primary.'
+              : `Merge into Version ${confirmAction === 'merge_a' ? 'A' : 'B'}? The other version will be removed and its sources preserved.`}
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => handleResolve(confirmAction)}
+              className="text-xs px-2.5 py-1 bg-gold text-bg rounded font-medium hover:bg-gold-light transition-colors"
+            >
+              Confirm
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmAction(null)}
+              className="text-xs px-2.5 py-1 border border-border text-text-secondary rounded hover:text-text-primary transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

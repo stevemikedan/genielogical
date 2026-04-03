@@ -4,6 +4,7 @@ import type {
   LLMRequest,
   LLMResponse,
   LLMCitation,
+  LLMStreamCallbacks,
   ProviderCapabilities,
   ProviderCost,
 } from './types.ts';
@@ -80,6 +81,63 @@ export class AnthropicProvider implements LLMProvider {
     const outputCost = (response.usage.output_tokens / 1_000_000) * this.cost.outputPerMillion;
 
     // Map stop reason
+    let stopReason: LLMResponse['stopReason'] = 'end_turn';
+    if (response.stop_reason === 'tool_use') stopReason = 'tool_use';
+    else if (response.stop_reason === 'max_tokens') stopReason = 'max_tokens';
+
+    return {
+      content,
+      citations,
+      usage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        estimatedCost: inputCost + outputCost,
+      },
+      stopReason,
+    };
+  }
+
+  async streamMessage(request: LLMRequest, callbacks: LLMStreamCallbacks): Promise<LLMResponse> {
+    const AnthropicSDK = (await import('@anthropic-ai/sdk')).default;
+    const client = new AnthropicSDK({
+      apiKey: this.apiKey,
+      dangerouslyAllowBrowser: true,
+    });
+
+    const tools = this.buildTools(request);
+
+    const stream = client.messages.stream({
+      model: this.modelId,
+      max_tokens: request.maxTokens,
+      system: request.systemPrompt,
+      messages: request.messages.map(m => ({
+        role: m.role,
+        content: m.content,
+      })),
+      ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+      ...(tools.length > 0 ? { tools } : {}),
+    });
+
+    // Collect text deltas
+    stream.on('text', (delta) => {
+      callbacks.onTextDelta(delta);
+    });
+
+    // Wait for final message
+    const response = await stream.finalMessage();
+
+    callbacks.onComplete?.();
+
+    // Extract text content
+    const textBlocks = response.content.filter(
+      (block): block is Anthropic.TextBlock => block.type === 'text',
+    );
+    const content = textBlocks.map(b => b.text).join('');
+    const citations = this.extractCitations(textBlocks);
+
+    const inputCost = (response.usage.input_tokens / 1_000_000) * this.cost.inputPerMillion;
+    const outputCost = (response.usage.output_tokens / 1_000_000) * this.cost.outputPerMillion;
+
     let stopReason: LLMResponse['stopReason'] = 'end_turn';
     if (response.stop_reason === 'tool_use') stopReason = 'tool_use';
     else if (response.stop_reason === 'max_tokens') stopReason = 'max_tokens';

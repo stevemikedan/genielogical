@@ -15,6 +15,7 @@ import { ConflictResolutionSection } from './ConflictResolutionSection.tsx';
 import { ResearchStepsSection } from './ResearchStepsSection.tsx';
 import { WorkspaceContext } from '@/context/workspace-context.tsx';
 import { CrossTreeLinkModal } from '@/components/layout/CrossTreeLinkModal.tsx';
+import { MergePersonsModal } from '@/components/layout/MergePersonsModal.tsx';
 import { formatDisplayName } from '@/utils/name-display.ts';
 
 export function PersonDetailPanel() {
@@ -24,9 +25,11 @@ export function PersonDetailPanel() {
     state.graph,
     state.flags,
     state.conjectures,
+    state.storyPathResult?.notableAncestors,
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showCrossTreeLink, setShowCrossTreeLink] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
   const workspaceCtx = useContext(WorkspaceContext);
   const hasMultipleTrees = (workspaceCtx?.state.trees.length ?? 0) > 1;
 
@@ -114,13 +117,22 @@ export function PersonDetailPanel() {
                 <span>
                   Possible duplicate: <strong>{otherName}</strong> has similar name and dates.
                 </span>
-                <button
-                  type="button"
-                  onClick={() => handleNavigate(otherPersonId)}
-                  className="flex-shrink-0 px-2 py-0.5 text-xs font-medium bg-tier3/20 hover:bg-tier3/30 border border-tier3 rounded transition-colors"
-                >
-                  Compare
-                </button>
+                <div className="flex gap-1.5 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleNavigate(otherPersonId)}
+                    className="px-2 py-0.5 text-xs font-medium bg-tier3/20 hover:bg-tier3/30 border border-tier3 rounded transition-colors"
+                  >
+                    Compare
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMergeTargetId(otherPersonId)}
+                    className="px-2 py-0.5 text-xs font-medium bg-gold/20 hover:bg-gold/30 border border-gold text-gold rounded transition-colors"
+                  >
+                    Merge
+                  </button>
+                </div>
               </div>
             );
           });
@@ -250,6 +262,14 @@ export function PersonDetailPanel() {
           otherTrees={workspaceCtx.state.trees}
           onClose={() => setShowCrossTreeLink(false)}
           onLinked={() => setShowCrossTreeLink(false)}
+        />
+      )}
+
+      {mergeTargetId && (
+        <MergePersonsModal
+          personIdA={detail.person.id}
+          personIdB={mergeTargetId}
+          onClose={() => setMergeTargetId(null)}
         />
       )}
     </>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { SourceClass, SourceType, ProvesWhat, Source } from '@/types/source.ts';
 import type { Edge } from '@/types/edge.ts';
 import type { TreeAction } from '@/context/tree-state.ts';
+import { computeSourceHash } from '@/utils/identity-hash.ts';
 
 const SOURCE_TYPES: Array<{ value: SourceType; label: string }> = [
   { value: 'vital_record', label: 'Vital Record' },
@@ -78,6 +79,7 @@ export function AddSourceForm({ personId, parentEdges, graph, dispatch, onDone }
       attachedToPersonIds: [personId],
       attachedToEdgeIds: [...attachEdgeIds],
       gedcomTag: null,
+      sourceHash: computeSourceHash(citation.trim(), url.trim() || null),
       addedAt: new Date(),
       addedBy: 'user',
     };

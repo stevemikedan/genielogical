@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildChatContext, formatContextForPrompt } from './chat-context.ts';
+import { buildChatContext, formatContextForPrompt, computeGenerationalDistribution, findDeepestAncestors, computeTierDistribution, computeDeepestChain } from './chat-context.ts';
 import { TreeGraph } from '@/graph/tree-graph.ts';
 import type { Person } from '@/types/person.ts';
 import type { Edge } from '@/types/edge.ts';
@@ -26,6 +26,9 @@ function makePerson(id: string, name: string, sex: 'M' | 'F' | 'U' = 'U'): Perso
     gedcomXref: null,
     familyIdAsSpouse: [],
     familyIdAsChild: [],
+    identityHash: '',
+    privacyLevel: 'public',
+    externalIds: {},
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -47,6 +50,8 @@ function makeEdge(id: string, parentId: string, childId: string): Edge {
     sourceIds: [],
     flagIds: [],
     familyGedcomXref: null,
+    assertedBy: 'local_user',
+    assertedAt: new Date(),
     createdAt: new Date(),
   };
 }
@@ -191,5 +196,174 @@ describe('formatContextForPrompt', () => {
     const text = formatContextForPrompt(context);
     expect(text).toContain('SELECTED: Alice');
     expect(text).toContain('Tier: 3');
+  });
+
+  it('includes generational distribution and tier distribution', () => {
+    const persons = [
+      makePerson('child', 'Child'),
+      makePerson('parent', 'Parent'),
+      makePerson('grandparent', 'Grandparent'),
+    ];
+    const edges = [
+      makeEdge('e1', 'parent', 'child'),
+      makeEdge('e2', 'grandparent', 'parent'),
+    ];
+    const graph = buildGraph(persons, edges);
+
+    const text = formatContextForPrompt(buildChatContext({
+      graph, flags: [], selectedPersonId: null, activeView: 'tree',
+      deepScanResult: null, storyPathResult: null,
+    }));
+
+    expect(text).toContain('Ancestor distribution:');
+    expect(text).toContain('Confidence:');
+    expect(text).toContain('T3:');
+  });
+
+  it('includes deepest ancestors in formatted text', () => {
+    const persons = [
+      makePerson('a', 'Modern Person'),
+      makePerson('b', 'Old Ancestor'),
+      makePerson('c', 'Ancient Ancestor'),
+    ];
+    const edges = [
+      makeEdge('e1', 'b', 'a'),
+      makeEdge('e2', 'c', 'b'),
+    ];
+    const graph = buildGraph(persons, edges);
+
+    const text = formatContextForPrompt(buildChatContext({
+      graph, flags: [], selectedPersonId: null, activeView: 'tree',
+      deepScanResult: null, storyPathResult: null,
+    }));
+
+    expect(text).toContain('Deepest ancestors:');
+    expect(text).toContain('Ancient Ancestor');
+  });
+
+  it('includes ancestor chain depth for selected person', () => {
+    const persons = [
+      makePerson('a', 'Child'),
+      makePerson('b', 'Parent'),
+      makePerson('c', 'Grandparent'),
+    ];
+    const edges = [
+      makeEdge('e1', 'b', 'a'),
+      makeEdge('e2', 'c', 'b'),
+    ];
+    const graph = buildGraph(persons, edges);
+
+    const text = formatContextForPrompt(buildChatContext({
+      graph, flags: [], selectedPersonId: 'a', activeView: 'tree',
+      deepScanResult: null, storyPathResult: null,
+    }));
+
+    expect(text).toContain('Ancestor chain depth: 2 generations');
+    expect(text).toContain('deepest: Grandparent');
+  });
+});
+
+describe('computeGenerationalDistribution', () => {
+  it('returns empty for empty graph', () => {
+    const graph = new TreeGraph();
+    const result = computeGenerationalDistribution(graph);
+    expect(result).toEqual([]);
+  });
+
+  it('buckets a 3-generation chain correctly', () => {
+    const persons = [
+      makePerson('a', 'Child'),
+      makePerson('b', 'Parent'),
+      makePerson('c', 'Grandparent'),
+    ];
+    const edges = [
+      makeEdge('e1', 'b', 'a'),
+      makeEdge('e2', 'c', 'b'),
+    ];
+    const graph = buildGraph(persons, edges);
+    const result = computeGenerationalDistribution(graph);
+
+    // All 3 persons should be in the 1-3 band
+    expect(result).toEqual([{ band: '1-3', count: 3 }]);
+  });
+});
+
+describe('findDeepestAncestors', () => {
+  it('finds deepest ancestors in a chain', () => {
+    const persons = [
+      makePerson('a', 'Child'),
+      makePerson('b', 'Parent'),
+      makePerson('c', 'Grandparent'),
+    ];
+    const edges = [
+      makeEdge('e1', 'b', 'a'),
+      makeEdge('e2', 'c', 'b'),
+    ];
+    const graph = buildGraph(persons, edges);
+    const result = findDeepestAncestors(graph, 2);
+
+    expect(result.length).toBe(2);
+    expect(result[0].name).toBe('Grandparent');
+    expect(result[0].generation).toBe(3);
+  });
+});
+
+describe('computeTierDistribution', () => {
+  it('counts persons per tier', () => {
+    const p1 = makePerson('a', 'A');
+    p1.confidenceTier = 1;
+    const p2 = makePerson('b', 'B');
+    p2.confidenceTier = 3;
+    const p3 = makePerson('c', 'C');
+    p3.confidenceTier = 3;
+    const graph = buildGraph([p1, p2, p3], []);
+    const result = computeTierDistribution(graph);
+
+    expect(result).toContainEqual({ tier: 1, count: 1 });
+    expect(result).toContainEqual({ tier: 3, count: 2 });
+  });
+});
+
+describe('computeDeepestChain', () => {
+  it('returns 0 depth for person with no parents', () => {
+    const graph = buildGraph([makePerson('a', 'Solo')], []);
+    const result = computeDeepestChain('a', graph);
+    expect(result.depth).toBe(0);
+    expect(result.deepestName).toBe('Solo');
+  });
+
+  it('computes depth through a chain', () => {
+    const persons = [
+      makePerson('a', 'Child'),
+      makePerson('b', 'Parent'),
+      makePerson('c', 'Grandparent'),
+      makePerson('d', 'Great-grandparent'),
+    ];
+    const edges = [
+      makeEdge('e1', 'b', 'a'),
+      makeEdge('e2', 'c', 'b'),
+      makeEdge('e3', 'd', 'c'),
+    ];
+    const graph = buildGraph(persons, edges);
+    const result = computeDeepestChain('a', graph);
+    expect(result.depth).toBe(3);
+    expect(result.deepestName).toBe('Great-grandparent');
+  });
+
+  it('follows non-primary edges too', () => {
+    const persons = [
+      makePerson('a', 'Child'),
+      makePerson('b', 'Father'),
+      makePerson('c', 'Mother'),
+      makePerson('d', 'Maternal Grandparent'),
+    ];
+    const e1 = makeEdge('e1', 'b', 'a');
+    const e2 = makeEdge('e2', 'c', 'a');
+    e2.isPrimary = false;
+    const e3 = makeEdge('e3', 'd', 'c');
+    const graph = buildGraph(persons, [e1, e2, e3]);
+    const result = computeDeepestChain('a', graph);
+    expect(result.depth).toBe(2);
+    expect(result.deepestName).toBe('Maternal Grandparent');
   });
 });

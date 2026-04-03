@@ -3,6 +3,7 @@ import { useTree } from '@/hooks/index.ts';
 import { generatePersonId } from '@/utils/id-generator.ts';
 import { parseDateInput } from '@/parser/date-input-parser.ts';
 import { parsePlaceInput } from '@/parser/place-input-parser.ts';
+import { computeIdentityHash } from '@/utils/identity-hash.ts';
 import type { Person } from '@/types/person.ts';
 
 interface AddPersonModalProps {
@@ -70,6 +71,9 @@ export function AddPersonModal({ onClose, onCreated, defaultSex }: AddPersonModa
       gedcomXref: null,
       familyIdAsSpouse: [],
       familyIdAsChild: [],
+      identityHash: computeIdentityHash(surnameTrimmed, givenTrimmed, null, null, null),
+      privacyLevel: 'public',
+      externalIds: {},
       createdAt: new Date(),
       updatedAt: new Date(),
     };

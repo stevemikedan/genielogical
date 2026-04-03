@@ -49,11 +49,11 @@ function getWedgeDetailLevel(
   endAngle: number,
   outerRadius: number,
   zoomScale: number,
-): 'none' | 'color-only' | 'name' | 'full' {
+): 'fill-only' | 'color-only' | 'name' | 'full' {
   const angularWidth = endAngle - startAngle;
   const arcLength = angularWidth * outerRadius * zoomScale;
 
-  if (arcLength < 10) return 'none';
+  if (arcLength < 10) return 'fill-only';
   if (arcLength < 40) return 'color-only';
   if (arcLength < 100) return 'name';
   return 'full';
@@ -144,7 +144,22 @@ export const FanChartWedge = memo(function FanChartWedge({
   const strokeWidth = isSelected ? 2.5 : isNotable ? 1.5 : 0.5;
   const dashArray = isEmpty ? TIER_DASH[4] : undefined;
 
-  if (detailLevel === 'none') return null;
+  // Fill-only: render just the colored wedge, no text/hover/flags
+  if (detailLevel === 'fill-only') {
+    return (
+      <path
+        d={path}
+        fill={fill}
+        fillOpacity={opacity}
+        stroke={strokeColor}
+        strokeWidth={strokeWidth}
+        strokeDasharray={dashArray}
+        className="cursor-pointer"
+        onClick={() => !isEmpty && person && onClick(person.id)}
+        onDoubleClick={() => !isEmpty && person && onDoubleClick(person.id)}
+      />
+    );
+  }
 
   return (
     <g

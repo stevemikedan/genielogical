@@ -22,6 +22,14 @@ export interface CustomTag {
   value: string;
 }
 
+export interface ExternalIds {
+  wikitree?: string;
+  familysearch?: string;
+  findagrave?: string;
+}
+
+export type PrivacyLevel = 'public' | 'anonymized' | 'private';
+
 export interface Person {
   id: string;             // GEDCOM xref e.g. "@I123@" or generated UUID
   name: PersonName;
@@ -64,6 +72,11 @@ export interface Person {
   gedcomXref: string | null;
   familyIdAsSpouse: string[];  // FAM xrefs where this person is HUSB/WIFE
   familyIdAsChild: string[];   // FAM xrefs where this person is CHIL
+
+  // Identity & sharing (Phase 2 prep)
+  identityHash: string;         // Deterministic fingerprint for duplicate detection
+  privacyLevel: PrivacyLevel;   // Controls sharing visibility
+  externalIds: ExternalIds;     // Links to external genealogy databases
 
   // Timestamps
   createdAt: Date;

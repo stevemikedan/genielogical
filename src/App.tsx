@@ -9,15 +9,17 @@ import { HealthDashboard } from '@/components/health-dashboard/index.ts';
 import { TreeNavigator } from '@/components/tree/index.ts';
 import { PersonDetailPanel } from '@/components/person-detail/index.ts';
 import { DeepScanView, ChatPanel } from '@/components/research/index.ts';
+import { ReportPanel } from '@/components/report/index.ts';
 import { usePhaseEEngines } from '@/hooks/index.ts';
 import { AIStatusIndicator } from '@/components/shared/AIStatusIndicator.tsx';
 import { AddPersonModal } from '@/components/shared/AddPersonModal.tsx';
 import { AddEdgeModal } from '@/components/shared/AddEdgeModal.tsx';
 import { TreeSelector } from '@/components/layout/TreeSelector.tsx';
 import { useWorkspace } from '@/hooks/use-workspace.ts';
+import { AISettingsModal } from '@/components/shared/AISettingsModal.tsx';
 import { useAutoSave } from '@/storage/auto-save.ts';
 
-type LoadedTab = 'tree' | 'health' | 'people' | 'deepScan';
+type LoadedTab = 'tree' | 'health' | 'people' | 'deepScan' | 'reports';
 
 function AppContent() {
   const { state, dispatch } = useTree();
@@ -26,6 +28,7 @@ function AppContent() {
   const [showAddPerson, setShowAddPerson] = useState(false);
   const [showAddEdge, setShowAddEdge] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [showAISettings, setShowAISettings] = useState(false);
 
   // Re-run Phase E engines when root person changes
   usePhaseEEngines(state.selectedPersonId, state.graph, dispatch);
@@ -79,6 +82,7 @@ function AppContent() {
                 {([
                   { key: 'tree' as const, label: 'Tree' },
                   { key: 'deepScan' as const, label: 'Deep Scan' },
+                  { key: 'reports' as const, label: 'Reports' },
                   { key: 'health' as const, label: 'Health' },
                   { key: 'people' as const, label: 'People' },
                 ]).map(tab => (
@@ -149,7 +153,7 @@ function AppContent() {
         </div>
       </header>
 
-      <main className="px-6 py-8">
+      <main className={`px-6 ${activeTab === 'tree' && state.phase === 'loaded' ? 'py-2' : 'py-8'}`}>
         {state.phase === 'empty' && (
           <div className="flex flex-col items-center justify-center min-h-[70vh] gap-8">
             <FileDropZone />
@@ -200,6 +204,15 @@ function AppContent() {
               <div className="max-w-6xl mx-auto text-center py-12 text-text-dim">
                 <p className="text-lg mb-2">No deep scan available</p>
                 <p className="text-sm">Select a person in the tree to run a deep scan of their ancestry.</p>
+              </div>
+            )}
+
+            {activeTab === 'reports' && (
+              <div className="max-w-6xl mx-auto">
+                <ReportPanel
+                  onSelectPerson={handleSelectPerson}
+                  onOpenSettings={() => setShowAISettings(true)}
+                />
               </div>
             )}
 
@@ -261,6 +274,10 @@ function AppContent() {
           graph={state.graph}
           onClose={() => setShowAddEdge(false)}
         />
+      )}
+
+      {showAISettings && (
+        <AISettingsModal onClose={() => setShowAISettings(false)} />
       )}
     </div>
   );

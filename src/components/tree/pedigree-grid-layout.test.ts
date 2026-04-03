@@ -28,6 +28,9 @@ function makePerson(id: string, sex: 'M' | 'F' | 'U', name: string): Person {
     gedcomXref: null,
     familyIdAsSpouse: [],
     familyIdAsChild: [],
+    identityHash: '',
+    privacyLevel: 'public',
+    externalIds: {},
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -49,6 +52,8 @@ function makeEdge(id: string, parentId: string, childId: string): Edge {
     sourceIds: [],
     flagIds: [],
     familyGedcomXref: null,
+    assertedBy: 'local_user',
+    assertedAt: new Date(),
     createdAt: new Date(),
   };
 }
@@ -181,23 +186,16 @@ describe('computePedigreeGridLayout', () => {
 
   describe('band calculation accuracy', () => {
     it('computes correct band dimensions with compact preset for 3 generations', () => {
-      // With 3 generations visible (gen 0, 1, 2), G=3, totalRowSlots = 2^2 = 4
-      // rowHeight = 55 (compact), so totalHeight = 4 * 55 = 220
+      // With recursive band allocation, leaf count drives sizing:
+      //   Leaves: PGF (ahn 4), PGM (ahn 5), Mother (ahn 3) = 3 leaves
+      //   totalHeight = max(3 * minBandHeight, 3 * rowHeight) = max(3*60, 3*55) = 180
       //
-      // Root (gen 0): bandSize = 2^(3-1-0) = 4, bandStart = 0
-      //   bandTop = 0, bandBottom = 4*55 = 220, y = 0 + 4*55/2 = 110
-      //
-      // Father (gen 1, ahn 2): bandSize = 2^(3-1-1) = 2, posInGen = 2-2 = 0, bandStart = 0
-      //   bandTop = 0, bandBottom = 2*55 = 110, y = 0 + 2*55/2 = 55
-      //
-      // Mother (gen 1, ahn 3): bandSize = 2, posInGen = 3-2 = 1, bandStart = 2
-      //   bandTop = 110, bandBottom = 4*55 = 220, y = 110 + 2*55/2 = 165
-      //
-      // PGF (gen 2, ahn 4): bandSize = 1, posInGen = 4-4 = 0, bandStart = 0
-      //   bandTop = 0, bandBottom = 55, y = 0 + 55/2 = 27.5
-      //
-      // PGM (gen 2, ahn 5): bandSize = 1, posInGen = 5-4 = 1, bandStart = 1
-      //   bandTop = 55, bandBottom = 110, y = 55 + 55/2 = 82.5
+      // Band allocation (proportional to leaf count):
+      //   Root (ahn 1): 0 to 180, y = 90
+      //   Father (ahn 2, 2 leaves) gets 2/3: 0 to 120, y = 60
+      //   Mother (ahn 3, 1 leaf) gets 1/3: 120 to 180, y = 150
+      //   PGF (ahn 4, 1 leaf): 0 to 60, y = 30
+      //   PGM (ahn 5, 1 leaf): 60 to 120, y = 90
 
       const root = makePerson('P1', 'M', 'John Smith');
       const father = makePerson('P2', 'M', 'James Smith');
@@ -218,43 +216,43 @@ describe('computePedigreeGridLayout', () => {
 
       const nodesByAhn = new Map(layout.nodes.map(n => [n.ahnentafel, n]));
 
-      // Root band spans full height
+      // Root band spans full height (3 leaves × 60 minBandHeight = 180)
       const rootNode = nodesByAhn.get(1)!;
       expect(rootNode.bandTop).toBe(0);
-      expect(rootNode.bandBottom).toBe(220);
-      expect(rootNode.y).toBe(110);
+      expect(rootNode.bandBottom).toBe(180);
+      expect(rootNode.y).toBe(90);
       expect(rootNode.x).toBe(0);
 
-      // Father gets top half
+      // Father gets 2/3 (2 leaves out of 3)
       const fatherNode = nodesByAhn.get(2)!;
       expect(fatherNode.bandTop).toBe(0);
-      expect(fatherNode.bandBottom).toBe(110);
-      expect(fatherNode.y).toBe(55);
+      expect(fatherNode.bandBottom).toBe(120);
+      expect(fatherNode.y).toBe(60);
       expect(fatherNode.x).toBe(compact.columnWidth); // 220
 
-      // Mother gets bottom half
+      // Mother gets 1/3 (1 leaf out of 3)
       const motherNode = nodesByAhn.get(3)!;
-      expect(motherNode.bandTop).toBe(110);
-      expect(motherNode.bandBottom).toBe(220);
-      expect(motherNode.y).toBe(165);
+      expect(motherNode.bandTop).toBe(120);
+      expect(motherNode.bandBottom).toBe(180);
+      expect(motherNode.y).toBe(150);
       expect(motherNode.x).toBe(compact.columnWidth);
 
-      // Paternal grandfather: top quarter
+      // Paternal grandfather: half of father's band
       const pgfNode = nodesByAhn.get(4)!;
       expect(pgfNode.bandTop).toBe(0);
-      expect(pgfNode.bandBottom).toBe(55);
-      expect(pgfNode.y).toBe(27.5);
+      expect(pgfNode.bandBottom).toBe(60);
+      expect(pgfNode.y).toBe(30);
       expect(pgfNode.x).toBe(2 * compact.columnWidth);
 
-      // Paternal grandmother: second quarter
+      // Paternal grandmother: other half of father's band
       const pgmNode = nodesByAhn.get(5)!;
-      expect(pgmNode.bandTop).toBe(55);
-      expect(pgmNode.bandBottom).toBe(110);
-      expect(pgmNode.y).toBe(82.5);
+      expect(pgmNode.bandTop).toBe(60);
+      expect(pgmNode.bandBottom).toBe(120);
+      expect(pgmNode.y).toBe(90);
       expect(pgmNode.x).toBe(2 * compact.columnWidth);
 
-      // Total height = 4 * 55 = 220
-      expect(layout.totalHeight).toBe(220);
+      // Total height = 3 leaves × 60 minBandHeight = 180
+      expect(layout.totalHeight).toBe(180);
     });
   });
 
@@ -543,6 +541,187 @@ describe('computePedigreeGridLayout', () => {
 
       const ahnNumbers = parentNodes.map(n => n.ahnentafel).sort();
       expect(ahnNumbers).toEqual([2, 3]);
+    });
+  });
+
+  // ── Sibling stacking ────────────────────────────────────────────
+  describe('sibling stacking', () => {
+    function makePersonWithYear(id: string, sex: 'M' | 'F' | 'U', name: string, birthYear: number | null): Person {
+      const p = makePerson(id, sex, name);
+      if (birthYear !== null) {
+        p.birth = { date: { date: new Date(`${birthYear}-01-01`), endDate: null, qualifier: 'exact', raw: `${birthYear}`, year: birthYear }, place: null };
+      }
+      return p;
+    }
+
+    // Shared family: root + father + mother + 3 siblings of father
+    function buildFamilyWithSiblings() {
+      const root = makePerson('P1', 'M', 'Root Person');
+      const father = makePersonWithYear('P2', 'M', 'Father', 1950);
+      const mother = makePerson('P3', 'F', 'Mother');
+      const grandpa = makePerson('GP', 'M', 'Grandpa');
+      const grandma = makePerson('GM', 'F', 'Grandma');
+
+      const uncle1 = makePersonWithYear('U1', 'M', 'Uncle One', 1948);
+      const uncle2 = makePersonWithYear('U2', 'M', 'Uncle Two', 1952);
+      const aunt = makePersonWithYear('A1', 'F', 'Aunt One', 1955);
+
+      const edges = [
+        makeEdge('E1', 'P2', 'P1'),     // father → root
+        makeEdge('E2', 'P3', 'P1'),     // mother → root
+        makeEdge('E3', 'GP', 'P2'),     // grandpa → father
+        makeEdge('E4', 'GM', 'P2'),     // grandma → father
+        makeEdge('E5', 'GP', 'U1'),     // grandpa → uncle1
+        makeEdge('E6', 'GM', 'U1'),     // grandma → uncle1
+        makeEdge('E7', 'GP', 'U2'),     // grandpa → uncle2
+        makeEdge('E8', 'GP', 'A1'),     // grandpa → aunt
+      ];
+
+      return buildGraph(
+        [root, father, mother, grandpa, grandma, uncle1, uncle2, aunt],
+        edges,
+      );
+    }
+
+    it('showSiblings=true produces siblings in layout for ancestors with siblings', () => {
+      const graph = buildFamilyWithSiblings();
+      const layout = computePedigreeGridLayout('P1', graph, 4, compact, undefined, true);
+
+      expect(layout.siblings.length).toBeGreaterThan(0);
+      // Father (ahn=2) should have siblings
+      const fatherSibs = layout.siblings.filter(s => s.directLineAncestorId === 'P2');
+      expect(fatherSibs.length).toBe(3); // uncle1, uncle2, aunt
+    });
+
+    it('showSiblings=false produces empty siblings array', () => {
+      const graph = buildFamilyWithSiblings();
+      const layout = computePedigreeGridLayout('P1', graph, 4, compact, undefined, false);
+
+      expect(layout.siblings).toHaveLength(0);
+      expect(layout.siblingConnectors).toHaveLength(0);
+    });
+
+    it('root person (ahn=1) has no siblings shown', () => {
+      // Give root a sibling
+      const root = makePerson('P1', 'M', 'Root Person');
+      const sibling = makePerson('S1', 'M', 'Root Sibling');
+      const parent = makePerson('P2', 'M', 'Parent');
+      const edges = [
+        makeEdge('E1', 'P2', 'P1'),
+        makeEdge('E2', 'P2', 'S1'),
+      ];
+      const graph = buildGraph([root, sibling, parent], edges);
+      const layout = computePedigreeGridLayout('P1', graph, 3, compact, undefined, true);
+
+      // No siblings shown for the root
+      const rootSibs = layout.siblings.filter(s => s.anchorAhnentafel === 1);
+      expect(rootSibs).toHaveLength(0);
+    });
+
+    it('sibling count capped at maxSiblingsPerFamily', () => {
+      // Build a family with 10 siblings of father
+      const root = makePerson('P1', 'M', 'Root');
+      const father = makePerson('P2', 'M', 'Father');
+      const grandpa = makePerson('GP', 'M', 'Grandpa');
+      const persons = [root, father, grandpa];
+      const edges = [
+        makeEdge('E1', 'P2', 'P1'),
+        makeEdge('E2', 'GP', 'P2'),
+      ];
+      for (let i = 0; i < 10; i++) {
+        const sib = makePersonWithYear(`S${i}`, 'M', `Sib ${i}`, 1940 + i);
+        persons.push(sib);
+        edges.push(makeEdge(`ES${i}`, 'GP', `S${i}`));
+      }
+      const graph = buildGraph(persons, edges);
+
+      // Cap at 3
+      const layout = computePedigreeGridLayout('P1', graph, 3, compact, undefined, true, 3);
+      const fatherSibs = layout.siblings.filter(s => s.directLineAncestorId === 'P2');
+      expect(fatherSibs.length).toBe(3);
+    });
+
+    it('siblings sorted by birth year', () => {
+      const graph = buildFamilyWithSiblings();
+      const layout = computePedigreeGridLayout('P1', graph, 4, compact, undefined, true);
+
+      const fatherSibs = layout.siblings.filter(s => s.directLineAncestorId === 'P2');
+      // Uncle One (1948), Uncle Two (1952), Aunt One (1955) — sorted by birth year
+      const names = fatherSibs.map(s => s.person.name.full);
+      expect(names).toEqual(['Uncle One', 'Uncle Two', 'Aunt One']);
+    });
+
+    it('bands inflate when showSiblings enabled', () => {
+      const graph = buildFamilyWithSiblings();
+
+      const layoutOff = computePedigreeGridLayout('P1', graph, 4, compact, undefined, false);
+      const layoutOn = computePedigreeGridLayout('P1', graph, 4, compact, undefined, true);
+
+      // With siblings, total height should be >= without
+      expect(layoutOn.totalHeight).toBeGreaterThanOrEqual(layoutOff.totalHeight);
+    });
+
+    it('sibling positions within ancestor band boundaries', () => {
+      const graph = buildFamilyWithSiblings();
+      const layout = computePedigreeGridLayout('P1', graph, 4, compact, undefined, true);
+
+      // Each sibling should be positioned near its anchor ancestor
+      for (const sib of layout.siblings) {
+        const ancestor = layout.nodes.find(n => n.person?.id === sib.directLineAncestorId);
+        expect(ancestor).toBeDefined();
+        // Sibling should be in the same generation column
+        expect(sib.generation).toBe(ancestor!.generation);
+      }
+    });
+
+    it('sibling connectors have correct trunkX', () => {
+      const graph = buildFamilyWithSiblings();
+      const layout = computePedigreeGridLayout('P1', graph, 4, compact, undefined, true);
+
+      expect(layout.siblingConnectors.length).toBeGreaterThan(0);
+
+      for (const sc of layout.siblingConnectors) {
+        // trunkX should be between the child column right edge and parent column left edge
+        const ancestorNode = layout.nodes.find(
+          n => n.ahnentafel === sc.siblingNode.anchorAhnentafel,
+        );
+        expect(ancestorNode).toBeDefined();
+        expect(sc.trunkX).toBeLessThan(ancestorNode!.x);
+      }
+    });
+
+    it('spouse set correctly on direct-line ancestor nodes', () => {
+      const graph = buildFamilyWithSiblings();
+      const layout = computePedigreeGridLayout('P1', graph, 4, compact, undefined, true);
+
+      // Father (ahn=2) should have mother as spouse (or grandma as spouse of father)
+      // Actually: father's spouse = the OTHER parent of root (P1). That's mother (P3).
+      const fatherNode = layout.nodes.find(n => n.ahnentafel === 2);
+      expect(fatherNode).toBeDefined();
+      expect(fatherNode!.spouse?.id).toBe('P3');
+
+      // Mother (ahn=3) should have father as spouse
+      const motherNode = layout.nodes.find(n => n.ahnentafel === 3);
+      expect(motherNode).toBeDefined();
+      expect(motherNode!.spouse?.id).toBe('P2');
+    });
+
+    it('no spouse on root node', () => {
+      const graph = buildFamilyWithSiblings();
+      const layout = computePedigreeGridLayout('P1', graph, 4, compact, undefined, true);
+
+      const rootNode = layout.nodes.find(n => n.ahnentafel === 1);
+      expect(rootNode).toBeDefined();
+      expect(rootNode!.spouse).toBeNull();
+    });
+
+    it('ancestors with 0 siblings produce no sibling nodes', () => {
+      // Mother has no siblings in this graph
+      const graph = buildFamilyWithSiblings();
+      const layout = computePedigreeGridLayout('P1', graph, 4, compact, undefined, true);
+
+      const motherSibs = layout.siblings.filter(s => s.directLineAncestorId === 'P3');
+      expect(motherSibs).toHaveLength(0);
     });
   });
 });

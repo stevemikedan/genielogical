@@ -9,7 +9,8 @@ import type { DeepScanResult } from '@/types/deep-scan.ts';
 import type { StoryPathResult } from '@/types/story-path.ts';
 import type { ResearchPriority, ResearchStep } from '@/types/research.ts';
 import type { AINotableContext, AIEnrichResult, BatchProgress, QuickCheckResult, ValidationReport, DeepResearchRound } from '@/types/ai.ts';
-import type { AncestryConflict, ConvergencePoint } from '@/types/conflict.ts';
+import type { AncestryConflict, ConvergencePoint, MergeDecision } from '@/types/conflict.ts';
+import type { ReportResult, DataQualityReport, ReportProgress } from '@/types/report.ts';
 import { TreeGraph } from '@/graph/tree-graph.ts';
 import { scoreAllConfidence } from '@/engine/confidence-scorer.ts';
 
@@ -38,6 +39,8 @@ export interface TreeState {
   ancestryConflicts: AncestryConflict[];
   convergencePoints: ConvergencePoint[];
   researchSteps: ResearchStep[];
+  activeReport: ReportResult | DataQualityReport | null;
+  reportProgress: ReportProgress | null;
 }
 
 export type TreeAction =
@@ -75,9 +78,13 @@ export type TreeAction =
   | { type: 'APPEND_DEEP_RESEARCH_ROUND'; personId: string; round: DeepResearchRound }
   | { type: 'CLEAR_DEEP_RESEARCH'; personId: string }
   | { type: 'SET_ANCESTRY_CONFLICTS'; conflicts: AncestryConflict[] }
+  | { type: 'RESOLVE_ANCESTRY_CONFLICT'; decision: MergeDecision }
   | { type: 'SET_CONVERGENCE_POINTS'; points: ConvergencePoint[] }
   | { type: 'EXPAND_TO_ANCESTOR'; targetPersonId: string | null }
-  | { type: 'LOAD_TREE'; graph: TreeGraph; flags: Flag[]; currentTreeId: string };
+  | { type: 'LOAD_TREE'; graph: TreeGraph; flags: Flag[]; currentTreeId: string }
+  | { type: 'SET_REPORT'; report: ReportResult | DataQualityReport }
+  | { type: 'SET_REPORT_PROGRESS'; progress: ReportProgress | null }
+  | { type: 'CLEAR_REPORT' };
 
 export const initialTreeState: TreeState = {
   phase: 'empty',
@@ -102,6 +109,8 @@ export const initialTreeState: TreeState = {
   ancestryConflicts: [],
   convergencePoints: [],
   researchSteps: [],
+  activeReport: null,
+  reportProgress: null,
 };
 
 function reScore(graph: TreeGraph, flags: Flag[]): void {
@@ -397,6 +406,45 @@ export function treeReducer(state: TreeState, action: TreeAction): TreeState {
         }
       }
 
+      // Merge person data fields from removed into kept
+      if (removePerson.name.full !== keepPerson.name.full) {
+        keepPerson.alternateNames.push({
+          name: { ...removePerson.name },
+          type: 'aka',
+          notes: 'Added during merge',
+        });
+      }
+      for (const altName of removePerson.alternateNames) {
+        if (!keepPerson.alternateNames.some(a => a.name.full === altName.name.full)) {
+          keepPerson.alternateNames.push(altName);
+        }
+      }
+      for (const evt of removePerson.events) {
+        if (!keepPerson.events.some(e => e.type === evt.type && e.date?.raw === evt.date?.raw)) {
+          keepPerson.events.push(evt);
+        }
+      }
+      if (removePerson.notes && !keepPerson.notes.includes(removePerson.notes)) {
+        keepPerson.notes = keepPerson.notes
+          ? `${keepPerson.notes}\n${removePerson.notes}`
+          : removePerson.notes;
+      }
+      for (const tag of removePerson.customTags) {
+        if (!keepPerson.customTags.some(t => t.key === tag.key)) {
+          keepPerson.customTags.push(tag);
+        }
+      }
+      for (const rid of removePerson.researchStepIds) {
+        if (!keepPerson.researchStepIds.includes(rid)) {
+          keepPerson.researchStepIds.push(rid);
+        }
+      }
+      for (const cid of removePerson.conjectureIds) {
+        if (!keepPerson.conjectureIds.includes(cid)) {
+          keepPerson.conjectureIds.push(cid);
+        }
+      }
+
       // Reassign edges from removeId → keepId
       for (const edge of state.graph.edges.values()) {
         if (edge.parentId === removeId) {
@@ -404,6 +452,46 @@ export function treeReducer(state: TreeState, action: TreeAction): TreeState {
         }
         if (edge.childId === removeId) {
           edge.childId = keepId;
+        }
+      }
+
+      // Remove self-loop edges (person became their own parent/child)
+      const selfLoopIds: string[] = [];
+      for (const [edgeId, edge] of state.graph.edges) {
+        if (edge.parentId === edge.childId) {
+          selfLoopIds.push(edgeId);
+        }
+      }
+      for (const id of selfLoopIds) {
+        state.graph.edges.delete(id);
+      }
+
+      // Deduplicate edges with same parentId+childId pair
+      const edgesByPair = new Map<string, string[]>();
+      for (const [edgeId, edge] of state.graph.edges) {
+        const key = `${edge.parentId}→${edge.childId}`;
+        const existing = edgesByPair.get(key);
+        if (existing) {
+          existing.push(edgeId);
+        } else {
+          edgesByPair.set(key, [edgeId]);
+        }
+      }
+      for (const edgeIds of edgesByPair.values()) {
+        if (edgeIds.length <= 1) continue;
+        // Keep the edge with the most sources
+        const sorted = edgeIds
+          .map(id => ({ id, edge: state.graph!.edges.get(id)! }))
+          .sort((a, b) => b.edge.sourceIds.length - a.edge.sourceIds.length);
+        const keeper = sorted[0];
+        for (let i = 1; i < sorted.length; i++) {
+          // Merge sourceIds into keeper
+          for (const sid of sorted[i].edge.sourceIds) {
+            if (!keeper.edge.sourceIds.includes(sid)) {
+              keeper.edge.sourceIds.push(sid);
+            }
+          }
+          state.graph!.edges.delete(sorted[i].id);
         }
       }
 
@@ -452,6 +540,60 @@ export function treeReducer(state: TreeState, action: TreeAction): TreeState {
 
     case 'SET_ANCESTRY_CONFLICTS':
       return { ...state, ancestryConflicts: action.conflicts };
+
+    case 'RESOLVE_ANCESTRY_CONFLICT': {
+      if (!state.graph) return state;
+      const { decision } = action;
+      const winner = state.graph.persons.get(decision.winnerPersonId);
+      const loser = state.graph.persons.get(decision.loserPersonId);
+      if (!winner || !loser) return state;
+
+      if (decision.action === 'merge_keep_winner') {
+        // Use existing MERGE_PERSONS logic via recursive dispatch
+        // But since we're in the reducer, apply it inline:
+        // The MERGE_PERSONS case handles sources, edges, self-loops, dedup, and field merge.
+        // We delegate to it by constructing the same action.
+        const mergedState = treeReducer(state, {
+          type: 'MERGE_PERSONS',
+          keepId: decision.winnerPersonId,
+          removeId: decision.loserPersonId,
+        });
+        // Remove the resolved conflict from the list
+        const remainingConflicts = mergedState.ancestryConflicts.filter(
+          c => c.personIdA !== decision.loserPersonId && c.personIdB !== decision.loserPersonId,
+        );
+        return { ...mergedState, ancestryConflicts: remainingConflicts };
+      }
+
+      if (decision.action === 'convert_to_parallel') {
+        // Keep both persons but mark the loser's parent edges as non-primary parallel paths
+        const loserParentEdges = state.graph.parentEdges.get(decision.loserPersonId) ?? [];
+        const groupId = `conflict-${decision.winnerPersonId}-${decision.loserPersonId}`;
+        for (const edge of loserParentEdges) {
+          edge.isPrimary = false;
+          edge.parallelGroupId = groupId;
+          edge.pathLabel = 'Disputed ancestry';
+        }
+        // Also mark winner's parent edges as primary in the group
+        const winnerParentEdges = state.graph.parentEdges.get(decision.winnerPersonId) ?? [];
+        for (const edge of winnerParentEdges) {
+          if (!edge.parallelGroupId) {
+            edge.parallelGroupId = groupId;
+          }
+        }
+        // Remove the resolved conflict
+        const remainingConflicts = state.ancestryConflicts.filter(
+          c => !(
+            (c.personIdA === decision.winnerPersonId && c.personIdB === decision.loserPersonId) ||
+            (c.personIdA === decision.loserPersonId && c.personIdB === decision.winnerPersonId)
+          ),
+        );
+        reScore(state.graph, state.flags);
+        return { ...state, ancestryConflicts: remainingConflicts };
+      }
+
+      return state;
+    }
 
     case 'SET_CONVERGENCE_POINTS':
       return { ...state, convergencePoints: action.points };
@@ -512,8 +654,19 @@ export function treeReducer(state: TreeState, action: TreeAction): TreeState {
         ancestryConflicts: [],
         convergencePoints: [],
         researchSteps: [],
+        activeReport: null,
+        reportProgress: null,
         error: null,
       };
     }
+
+    case 'SET_REPORT':
+      return { ...state, activeReport: action.report };
+
+    case 'SET_REPORT_PROGRESS':
+      return { ...state, reportProgress: action.progress };
+
+    case 'CLEAR_REPORT':
+      return { ...state, activeReport: null, reportProgress: null };
   }
 }

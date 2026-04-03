@@ -25,6 +25,9 @@ function makePerson(id: string, name: string = 'Test Person'): Person {
     gedcomXref: null,
     familyIdAsSpouse: [],
     familyIdAsChild: [],
+    identityHash: '',
+    privacyLevel: 'public',
+    externalIds: {},
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -46,6 +49,8 @@ function makeEdge(id: string, parentId: string, childId: string): Edge {
     sourceIds: [],
     flagIds: [],
     familyGedcomXref: null,
+    assertedBy: 'local_user',
+    assertedAt: new Date(),
     createdAt: new Date(),
   };
 }
@@ -187,6 +192,7 @@ describe('TreeGraph mutations', () => {
         attachedToPersonIds: ['p1'],
         attachedToEdgeIds: [],
         gedcomTag: null,
+        sourceHash: '',
         addedAt: new Date(),
         addedBy: 'test',
       });

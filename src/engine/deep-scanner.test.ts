@@ -26,6 +26,9 @@ function makePerson(id: string, name: string, birthYear: number | null = null): 
     gedcomXref: null,
     familyIdAsSpouse: [],
     familyIdAsChild: [],
+    identityHash: '',
+    privacyLevel: 'public',
+    externalIds: {},
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -47,6 +50,8 @@ function makeEdge(id: string, parentId: string, childId: string, tier: 1 | 2 | 3
     sourceIds: [],
     flagIds: [],
     familyGedcomXref: null,
+    assertedBy: 'local_user',
+    assertedAt: new Date(),
     createdAt: new Date(),
   };
 }

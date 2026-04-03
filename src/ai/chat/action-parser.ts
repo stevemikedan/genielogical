@@ -31,12 +31,35 @@ export function extractActionsFromResponse(
   }
 
   // 3. Detect duplicate analysis
-  const duplicateAction = detectDuplicateAnalysis(response);
-  if (duplicateAction) actions.push(duplicateAction);
+  const duplicateAction = detectDuplicateAnalysis(response, graph, context.selectedPersonId);
+  if (duplicateAction) {
+    actions.push(duplicateAction);
+    // Also offer merge when two specific persons are identified
+    const personIds = duplicateAction.data.personIds as string[];
+    if (personIds.length === 2) {
+      actions.push({
+        type: 'merge_persons',
+        label: 'Merge these persons',
+        data: { personIdA: personIds[0], personIdB: personIds[1] },
+      });
+    }
+  }
 
   // 4. Detect research recommendations
   const researchAction = detectResearchRecommendation(response);
   if (researchAction) actions.push(researchAction);
+
+  // 5. Detect flag suggestions
+  const flagAction = detectFlagSuggestion(response, context.selectedPersonId);
+  if (flagAction) actions.push(flagAction);
+
+  // 6. Detect conjecture suggestions
+  const conjectureAction = detectConjecture(response, context.selectedPersonId);
+  if (conjectureAction) actions.push(conjectureAction);
+
+  // 7. Detect deep research suggestions
+  const deepResearchAction = detectDeepResearchSuggestion(response, context.selectedPersonId);
+  if (deepResearchAction) actions.push(deepResearchAction);
 
   return actions;
 }
@@ -173,15 +196,148 @@ const DUPLICATE_PATTERNS = [
   /identical.*(?:name|birth|death)/i,
 ];
 
-function detectDuplicateAnalysis(response: string): ChatAction | null {
-  if (DUPLICATE_PATTERNS.some(p => p.test(response))) {
-    return {
-      type: 'mark_duplicate' as ChatActionType,
-      label: 'Mark as duplicate',
-      data: {},
-    };
+function detectDuplicateAnalysis(
+  response: string,
+  graph: TreeGraph | null,
+  selectedPersonId: string | null,
+): ChatAction | null {
+  if (!DUPLICATE_PATTERNS.some(p => p.test(response))) return null;
+
+  // Try to extract person IDs from bold names in the response
+  const personIds: string[] = [];
+  if (graph) {
+    const boldPattern = /\*\*([^*]+)\*\*/g;
+    let match: RegExpExecArray | null;
+    while ((match = boldPattern.exec(response)) !== null) {
+      const name = match[1].trim();
+      if (name.length < 3) continue;
+      const pid = findPersonByName(name, graph);
+      if (pid && !personIds.includes(pid)) personIds.push(pid);
+      if (personIds.length >= 2) break;
+    }
   }
-  return null;
+
+  // Include selected person if only one other was found
+  if (selectedPersonId && personIds.length === 1 && !personIds.includes(selectedPersonId)) {
+    personIds.unshift(selectedPersonId);
+  }
+
+  return {
+    type: 'mark_duplicate' as ChatActionType,
+    label: 'Mark as duplicate',
+    data: { personIds },
+  };
+}
+
+// ── Flag Suggestion Detection ────────────────────────────────────────
+
+const FLAG_PATTERNS = [
+  /should be flagged/i,
+  /chronological impossibilit/i,
+  /dates? (?:don'?t|doesn'?t|do not) (?:add up|make sense)/i,
+  /(?:data|date|age) (?:is |seems? )?(?:wrong|incorrect|impossible|implausible)/i,
+  /suspicious (?:date|claim|connection)/i,
+  /no (?:evidence|documentation|source|proof)/i,
+  /needs? (?:a |to be )?flag/i,
+  /red flag/i,
+];
+
+const FLAG_SEVERITY_MAP: [RegExp, 'critical' | 'warning'][] = [
+  [/impossib|critical|serious|major|wrong/i, 'critical'],
+  [/suspicious|questionable|unlikely|implausible|warning/i, 'warning'],
+];
+
+const FLAG_CATEGORY_MAP: [RegExp, string][] = [
+  [/chronolog|date|age|year|birth|death|born|died/i, 'chronological'],
+  [/king|queen|royal|noble|title|prestige/i, 'prestige_inflation'],
+  [/duplicate|same person/i, 'duplicate_suspect'],
+  [/source|evidence|document|proof|unsourced/i, 'source_desert'],
+  [/parent|child|connection|lineage/i, 'structural'],
+];
+
+function detectFlagSuggestion(response: string, selectedPersonId: string | null): ChatAction | null {
+  if (!FLAG_PATTERNS.some(p => p.test(response))) return null;
+  if (!selectedPersonId) return null;
+
+  // Determine severity from language
+  let severity: 'critical' | 'warning' = 'warning';
+  for (const [pattern, sev] of FLAG_SEVERITY_MAP) {
+    if (pattern.test(response)) { severity = sev; break; }
+  }
+
+  // Determine category from language
+  let category = 'data_quality';
+  for (const [pattern, cat] of FLAG_CATEGORY_MAP) {
+    if (pattern.test(response)) { category = cat; break; }
+  }
+
+  // Extract a description — use the sentence matching the flag pattern
+  const sentences = response.split(/[.!]\s+/);
+  const flagSentence = sentences.find(s => FLAG_PATTERNS.some(p => p.test(s))) ?? 'Issue detected by AI';
+
+  return {
+    type: 'create_flag',
+    label: 'Create flag',
+    data: {
+      personId: selectedPersonId,
+      severity,
+      category,
+      description: flagSentence.trim().slice(0, 200),
+    },
+  };
+}
+
+// ── Conjecture Detection ─────────────────────────────────────────────
+
+const CONJECTURE_PATTERNS = [
+  /\bhypothesis\b/i,
+  /\bmy best guess\b/i,
+  /\bone (?:possible )?explanation\b/i,
+  /\bconjecture\b/i,
+  /\bspeculat(?:e|ion|ive)\b/i,
+  /\bpossibly the same\b/i,
+  /\bif (?:we|I) assume\b/i,
+  /\bworking theory\b/i,
+];
+
+function detectConjecture(response: string, selectedPersonId: string | null): ChatAction | null {
+  if (!CONJECTURE_PATTERNS.some(p => p.test(response))) return null;
+  if (!selectedPersonId) return null;
+
+  // Extract the hypothesis text — use the sentence containing the pattern
+  const sentences = response.split(/[.!]\s+/);
+  const hypothesisSentence = sentences.find(s => CONJECTURE_PATTERNS.some(p => p.test(s))) ?? 'AI-suggested hypothesis';
+
+  return {
+    type: 'create_conjecture',
+    label: 'Save as conjecture',
+    data: {
+      personId: selectedPersonId,
+      hypothesis: hypothesisSentence.trim().slice(0, 300),
+    },
+  };
+}
+
+// ── Deep Research Suggestion Detection ───────────────────────────────
+
+const DEEP_RESEARCH_PATTERNS = [
+  /needs? (?:a )?deep(?:er)? research/i,
+  /deep dive/i,
+  /thorough research/i,
+  /comprehensive (?:search|investigation|review)/i,
+  /warrants? (?:further|deeper|more) (?:investigation|research|analysis)/i,
+  /recommend.*deep research/i,
+];
+
+function detectDeepResearchSuggestion(response: string, selectedPersonId: string | null): ChatAction | null {
+  if (!DEEP_RESEARCH_PATTERNS.some(p => p.test(response))) return null;
+  if (!selectedPersonId) return null;
+
+  return {
+    type: 'run_deep_research',
+    label: 'Open deep research',
+    data: { personId: selectedPersonId },
+  };
 }
 
 // ── Research Recommendation Detection ────────────────────────────────

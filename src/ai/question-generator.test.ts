@@ -33,6 +33,9 @@ function makePerson(overrides: Partial<Person> = {}): Person {
     gedcomXref: null,
     familyIdAsSpouse: [],
     familyIdAsChild: [],
+    identityHash: '',
+    privacyLevel: 'public',
+    externalIds: {},
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -55,6 +58,8 @@ function makeEdge(overrides: Partial<Edge> = {}): Edge {
     sourceIds: [],
     flagIds: [],
     familyGedcomXref: null,
+    assertedBy: 'local_user',
+    assertedAt: new Date(),
     createdAt: new Date(),
     ...overrides,
   };

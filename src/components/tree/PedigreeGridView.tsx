@@ -11,6 +11,8 @@ import type { PedigreeGridNode as PedigreeGridNodeType } from './pedigree-grid-l
 import { PedigreeGridNode } from './PedigreeGridNode.tsx';
 import { PlaceholderNode } from './PlaceholderNode.tsx';
 import { PedigreeGridConnector } from './PedigreeGridConnector.tsx';
+import { SiblingNode } from './SiblingNode.tsx';
+import { SiblingConnector } from './SiblingConnector.tsx';
 
 export interface PedigreeGridViewHandle {
   zoomIn: () => void;
@@ -28,8 +30,10 @@ interface PedigreeGridViewProps {
   maxGenerations: number;
   visibleTiers: Set<ConfidenceTier>;
   showRejected: boolean;
+  showSiblings: boolean;
   expandedAncestors: Set<string>;
   onExpandAncestor: (personId: string) => void;
+  onCollapseAncestor: (personId: string) => void;
   onExpandAllFrom: (personId: string) => void;
   onAddPerson: (ahnentafel: number, position: 'father' | 'mother', parentOfPersonId: string | null) => void;
   onReRoot: (personId: string) => void;
@@ -46,8 +50,10 @@ export const PedigreeGridView = forwardRef<PedigreeGridViewHandle, PedigreeGridV
       maxGenerations,
       visibleTiers,
       showRejected,
+      showSiblings,
       expandedAncestors,
       onExpandAncestor,
+      onCollapseAncestor,
       onExpandAllFrom,
       onAddPerson,
       onReRoot,
@@ -74,8 +80,9 @@ export const PedigreeGridView = forwardRef<PedigreeGridViewHandle, PedigreeGridV
           maxGenerations,
           preset,
           expandedAncestors,
+          showSiblings,
         ),
-      [rootPersonId, graph, maxGenerations, preset, expandedAncestors],
+      [rootPersonId, graph, maxGenerations, preset, expandedAncestors, showSiblings],
     );
 
     // Filter nodes by tier visibility and rejected status
@@ -105,6 +112,29 @@ export const PedigreeGridView = forwardRef<PedigreeGridViewHandle, PedigreeGridV
         return fromVisible && toVisible;
       });
     }, [layout.connectors, visiblePersonIds]);
+
+    // Filter siblings by tier visibility and rejected status
+    const filteredSiblings = useMemo(() => {
+      return layout.siblings.filter(sib => {
+        if (!visibleTiers.has(sib.person.confidenceTier)) return false;
+        if (!showRejected && sib.person.status === 'rejected') return false;
+        // Only show if the anchor ancestor is also visible
+        return visiblePersonIds.has(sib.directLineAncestorId);
+      });
+    }, [layout.siblings, visibleTiers, showRejected, visiblePersonIds]);
+
+    // Filter sibling connectors: sibling must be visible
+    const filteredSiblingIds = useMemo(() => {
+      const ids = new Set<string>();
+      for (const sib of filteredSiblings) ids.add(sib.person.id);
+      return ids;
+    }, [filteredSiblings]);
+
+    const filteredSiblingConnectors = useMemo(() => {
+      return layout.siblingConnectors.filter(sc =>
+        filteredSiblingIds.has(sc.siblingNode.person.id),
+      );
+    }, [layout.siblingConnectors, filteredSiblingIds]);
 
     // Filter placeholders: the child node they reference must be visible
     const filteredPlaceholders = useMemo(() => {
@@ -227,21 +257,25 @@ export const PedigreeGridView = forwardRef<PedigreeGridViewHandle, PedigreeGridV
       onExpandAncestor(personId);
     }, [onExpandAncestor]);
 
+    const handleCollapse = useCallback((personId: string) => {
+      onCollapseAncestor(personId);
+    }, [onCollapseAncestor]);
+
     const handleExpandAll = useCallback((personId: string) => {
       layoutChangeReasonRef.current = 'expand';
       expandTargetRef.current = personId;
       onExpandAllFrom(personId);
     }, [onExpandAllFrom]);
 
-    // Zoom handlers (1.2x step for smoother control)
+    // Zoom handlers (1.5x step for snappy control)
     const zoomIn = useCallback(() => {
       if (!svgRef.current || !zoomRef.current) return;
-      d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1.2);
+      d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1.5);
     }, []);
 
     const zoomOut = useCallback(() => {
       if (!svgRef.current || !zoomRef.current) return;
-      d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1 / 1.2);
+      d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1 / 1.5);
     }, []);
 
     // Expose zoom controls via ref
@@ -278,13 +312,31 @@ export const PedigreeGridView = forwardRef<PedigreeGridViewHandle, PedigreeGridV
         className="bg-bg"
       >
         <g transform={`translate(${transform.x},${transform.y}) scale(${transform.k})`}>
-          {/* Connectors (below nodes) */}
+          {/* Sibling connectors (lowest layer) */}
+          {filteredSiblingConnectors.map((sc, i) => (
+            <SiblingConnector
+              key={`sib-conn-${i}`}
+              connector={sc}
+            />
+          ))}
+
+          {/* Standard connectors */}
           {filteredConnectors.map((connector, i) => (
             <PedigreeGridConnector
               key={`connector-${i}`}
               connector={connector}
               nodeWidth={preset.nodeW}
               nodeHeight={preset.nodeH}
+            />
+          ))}
+
+          {/* Sibling nodes */}
+          {filteredSiblings.map(sib => (
+            <SiblingNode
+              key={`sib-${sib.person.id}-${sib.anchorAhnentafel}`}
+              node={sib}
+              isSelected={sib.person.id === selectedPersonId}
+              onClick={onSelectPerson}
             />
           ))}
 
@@ -303,6 +355,8 @@ export const PedigreeGridView = forwardRef<PedigreeGridViewHandle, PedigreeGridV
                 isSelected={node.person?.id === selectedPersonId}
                 onClick={onSelectPerson}
                 onExpand={handleExpand}
+                onCollapse={handleCollapse}
+                isExpanded={node.person ? expandedAncestors.has(node.person.id) : false}
                 onExpandAll={handleExpandAll}
               />
             </g>

@@ -10,7 +10,8 @@ import type { DetailLevel } from './TreeNode.tsx';
 import { TreeEdge } from './TreeEdge.tsx';
 import { EdgeTooltip } from './EdgeTooltip.tsx';
 import { TreeControls, DENSITY_PRESETS } from './TreeControls.tsx';
-import type { ViewMode, TreeDensity, TreeOrientation } from './TreeControls.tsx';
+import type { ViewMode, TreeDensity, TreeOrientation, MapColorMode, MapLayerMode } from './TreeControls.tsx';
+import type { TimeRange } from './geo-map-data.ts';
 import { TreeMinimap } from './TreeMinimap.tsx';
 import { PedigreeGridView } from './PedigreeGridView.tsx';
 import type { PedigreeGridViewHandle } from './PedigreeGridView.tsx';
@@ -19,6 +20,10 @@ import type { FanChartViewHandle } from './FanChartView.tsx';
 import type { FanMode } from './fan-chart-layout.ts';
 import { LineagePathView } from './LineagePathView.tsx';
 import type { LineagePathViewHandle } from './LineagePathView.tsx';
+import { GeoMapView } from './GeoMapView.tsx';
+import type { GeoMapViewHandle } from './GeoMapView.tsx';
+import { NetworkMapView } from './NetworkMapView.tsx';
+import type { NetworkMapViewHandle } from './NetworkMapView.tsx';
 import { AddPersonModal } from '@/components/shared/AddPersonModal.tsx';
 import { generateEdgeId } from '@/utils/id-generator.ts';
 import type { Edge } from '@/types/edge.ts';
@@ -169,14 +174,30 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
     visible: false, x: 0, y: 0, confidenceTier: 3, confidenceReason: '', relationshipType: '', sourceCount: 0,
   });
   const [transform, setTransform] = useState(d3.zoomIdentity);
+  const transformRef = useRef(d3.zoomIdentity);
 
   const [fanMode, setFanMode] = useState<FanMode>('semi');
+  const [showSiblings, setShowSiblings] = useState(false);
+
+  // Map-specific state
+  const [mapColorMode, setMapColorMode] = useState<MapColorMode>('era');
+  const [mapLayerMode, setMapLayerMode] = useState<MapLayerMode>('markers');
+  const [mapTimeRange, setMapTimeRange] = useState<TimeRange | null>(null);
+  const [mapIsPlaying, setMapIsPlaying] = useState(false);
+  const [mapYearBounds, setMapYearBounds] = useState<{ minYear: number; maxYear: number } | null>(null);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const gridViewRef = useRef<PedigreeGridViewHandle>(null);
   const fanChartRef = useRef<FanChartViewHandle>(null);
   const lineagePathRef = useRef<LineagePathViewHandle>(null);
+  const geoMapRef = useRef<GeoMapViewHandle>(null);
+  const networkMapRef = useRef<NetworkMapViewHandle>(null);
+
+  // Track why layout changed to decide zoom behavior (mirrors PedigreeGridView pattern)
+  const layoutChangeReasonRef = useRef<'initial' | 'expand' | 'other'>('initial');
+  const expandTargetRef = useRef<string | null>(null);
+  const isInitialLayoutRef = useRef(true);
 
   // State for placeholder-triggered add person (pedigreeGrid mode)
   const [pendingAdd, setPendingAdd] = useState<{ sex: 'M' | 'F'; connectToChildId: string | null } | null>(null);
@@ -195,7 +216,7 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
   // Build hierarchy (not used for fan or pedigreeGrid — they have their own layout)
   const hierarchyRoot = useMemo(() => {
     if (!rootPersonId) return null;
-    if (viewMode === 'fan' || viewMode === 'pedigreeGrid' || viewMode === 'lineagePath') return null;
+    if (viewMode === 'fan' || viewMode === 'pedigreeGrid' || viewMode === 'lineagePath' || viewMode === 'map' || viewMode === 'network') return null;
     if (viewMode === 'directLine') {
       return buildDirectLineHierarchy(rootPersonId, graph, maxGenerations, expandedNodes, expandedAncestors);
     }
@@ -246,6 +267,9 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
     });
   }, [layoutData, visibleTiers, showRejected]);
 
+  // Keep transformRef in sync with state
+  useEffect(() => { transformRef.current = transform; }, [transform]);
+
   // Setup D3 zoom
   useEffect(() => {
     if (!svgRef.current) return;
@@ -263,22 +287,50 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
     };
   }, []);
 
-  // Fit to view when layout or orientation changes
+  // Center on a specific node at current zoom scale (don't zoom out)
+  const centerOnNode = useCallback((personId: string) => {
+    const node = layoutData?.descendants().find(n => n.data.person.id === personId);
+    if (!node || !svgRef.current || !zoomRef.current) return;
+    const { sx, sy } = toSvg(node.x, node.y, orientation);
+    const svg = svgRef.current;
+    const width = svg.clientWidth || 800;
+    const height = svg.clientHeight || 600;
+    const scale = Math.max(transformRef.current.k, 0.4); // keep current zoom, min 0.4
+    const t = d3.zoomIdentity
+      .translate(width / 2 - sx * scale, height / 2 - sy * scale)
+      .scale(scale);
+    d3.select(svg).transition().duration(400).call(zoomRef.current.transform, t);
+  }, [layoutData, orientation]);
+
+  // Smart zoom: fit on initial/orientation change, center on expand
   useEffect(() => {
     if (!svgRef.current || !layoutData || !zoomRef.current) return;
     const svg = svgRef.current;
     const nodes = layoutData.descendants();
     if (nodes.length === 0) return;
 
-    const width = svg.clientWidth || 800;
-    const height = svg.clientHeight || 600;
-    const t = computeFitTransform(nodes, width, height, orientation);
+    if (isInitialLayoutRef.current) {
+      // First layout: fit to view
+      isInitialLayoutRef.current = false;
+      const width = svg.clientWidth || 800;
+      const height = svg.clientHeight || 600;
+      const t = computeFitTransform(nodes, width, height, orientation);
+      d3.select(svg).transition().duration(500).call(zoomRef.current.transform, t);
+    } else if (layoutChangeReasonRef.current === 'expand' && expandTargetRef.current) {
+      // Expand: center on the expanded node at current zoom
+      centerOnNode(expandTargetRef.current);
+    } else {
+      // Orientation/preset change: fit to view
+      const width = svg.clientWidth || 800;
+      const height = svg.clientHeight || 600;
+      const t = computeFitTransform(nodes, width, height, orientation);
+      d3.select(svg).transition().duration(500).call(zoomRef.current.transform, t);
+    }
 
-    d3.select(svg)
-      .transition()
-      .duration(500)
-      .call(zoomRef.current.transform, t);
-  }, [layoutData, orientation, preset]);
+    // Reset reason after handling
+    layoutChangeReasonRef.current = 'other';
+    expandTargetRef.current = null;
+  }, [layoutData, orientation, preset, centerOnNode]);
 
   // React to expandToAncestor intent
   useEffect(() => {
@@ -311,8 +363,16 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
       lineagePathRef.current?.zoomIn();
       return;
     }
+    if (viewMode === 'map') {
+      geoMapRef.current?.zoomIn();
+      return;
+    }
+    if (viewMode === 'network') {
+      networkMapRef.current?.zoomIn();
+      return;
+    }
     if (!svgRef.current || !zoomRef.current) return;
-    d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1.2);
+    d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1.5);
   }, [viewMode]);
 
   const handleZoomOut = useCallback(() => {
@@ -328,8 +388,16 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
       lineagePathRef.current?.zoomOut();
       return;
     }
+    if (viewMode === 'map') {
+      geoMapRef.current?.zoomOut();
+      return;
+    }
+    if (viewMode === 'network') {
+      networkMapRef.current?.zoomOut();
+      return;
+    }
     if (!svgRef.current || !zoomRef.current) return;
-    d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1 / 1.2);
+    d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1 / 1.5);
   }, [viewMode]);
 
   const handleFitToView = useCallback(() => {
@@ -343,6 +411,14 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
     }
     if (viewMode === 'lineagePath') {
       lineagePathRef.current?.fitToView();
+      return;
+    }
+    if (viewMode === 'map') {
+      geoMapRef.current?.fitToView();
+      return;
+    }
+    if (viewMode === 'network') {
+      networkMapRef.current?.fitToView();
       return;
     }
     if (!svgRef.current || !layoutData || !zoomRef.current) return;
@@ -370,6 +446,14 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
       lineagePathRef.current?.centerOnSelected();
       return;
     }
+    if (viewMode === 'map') {
+      geoMapRef.current?.centerOnSelected();
+      return;
+    }
+    if (viewMode === 'network') {
+      networkMapRef.current?.centerOnSelected();
+      return;
+    }
     if (!svgRef.current || !zoomRef.current || !layoutData) return;
     if (!selectedPersonId) {
       handleFitToView();
@@ -384,12 +468,45 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
     const width = svg.clientWidth || 800;
     const height = svg.clientHeight || 600;
     const { sx, sy } = toSvg(node.x, node.y, orientation);
-    const scale = Math.min(transform.k, 1);
+    const scale = Math.min(transformRef.current.k, 1);
     const t = d3.zoomIdentity
       .translate(width / 2 - sx * scale, height / 2 - sy * scale)
       .scale(scale);
     d3.select(svg).transition().duration(400).call(zoomRef.current.transform, t);
-  }, [viewMode, selectedPersonId, layoutData, orientation, transform.k, handleFitToView]);
+  }, [viewMode, selectedPersonId, layoutData, orientation, handleFitToView]);
+
+  // Map time animation: 50-year sliding window, advance 10 years per tick
+  useEffect(() => {
+    if (!mapIsPlaying || !mapYearBounds) return;
+
+    const { minYear, maxYear } = mapYearBounds;
+    const windowSize = 50;
+    const step = 10;
+
+    const interval = setInterval(() => {
+      setMapTimeRange(prev => {
+        const start = prev ? prev.startYear + step : minYear;
+        if (start > maxYear) {
+          // Reached end — stop playing, clear filter
+          setMapIsPlaying(false);
+          return null;
+        }
+        return { startYear: start, endYear: Math.min(start + windowSize, maxYear) };
+      });
+    }, 800);
+
+    return () => clearInterval(interval);
+  }, [mapIsPlaying, mapYearBounds]);
+
+  const handleMapPlayPauseToggle = useCallback(() => {
+    setMapIsPlaying(prev => {
+      if (!prev && mapYearBounds) {
+        // Starting playback — reset to beginning
+        setMapTimeRange({ startYear: mapYearBounds.minYear, endYear: mapYearBounds.minYear + 50 });
+      }
+      return !prev;
+    });
+  }, [mapYearBounds]);
 
   // Keyboard shortcuts for zoom
   useEffect(() => {
@@ -413,12 +530,13 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
     const width = svg.clientWidth || 800;
     const height = svg.clientHeight || 600;
 
+    const k = transformRef.current.k;
     const t = d3.zoomIdentity
-      .translate(width / 2 - x * transform.k, height / 2 - y * transform.k)
-      .scale(transform.k);
+      .translate(width / 2 - x * k, height / 2 - y * k)
+      .scale(k);
 
     d3.select(svg).transition().duration(300).call(zoomRef.current.transform, t);
-  }, [transform]);
+  }, []);
 
   const handleExpandSiblings = useCallback((personId: string) => {
     setExpandedNodes(prev => {
@@ -429,6 +547,8 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
   }, []);
 
   const handleExpandAncestor = useCallback((personId: string) => {
+    layoutChangeReasonRef.current = 'expand';
+    expandTargetRef.current = personId;
     setExpandedAncestors(prev => {
       const next = new Set(prev);
       next.add(personId);
@@ -449,6 +569,35 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
       handleExpandAncestor(personId);
     }
   }, [viewMode, handleExpandSiblings, handleExpandAncestor]);
+
+  // Collapse a branch: remove the person and all ancestors expanded through it
+  const handleCollapseAncestor = useCallback((personId: string) => {
+    setExpandedAncestors(prev => {
+      const next = new Set(prev);
+      // Remove personId and recursively remove all ancestors reachable through it
+      const toRemove = new Set<string>();
+      const queue = [personId];
+      while (queue.length > 0) {
+        const current = queue.shift()!;
+        if (toRemove.has(current)) continue;
+        toRemove.add(current);
+        const parentEdges = graph.parentEdges.get(current);
+        if (parentEdges) {
+          for (const edge of parentEdges) {
+            if (next.has(edge.parentId)) {
+              queue.push(edge.parentId);
+            }
+          }
+        }
+      }
+      for (const id of toRemove) next.delete(id);
+      return next;
+    });
+  }, [graph]);
+
+  const handleCollapseAll = useCallback(() => {
+    setExpandedAncestors(new Set());
+  }, []);
 
   // Expand-all handler for pedigreeGrid: walk all primary parent edges from node to leaves
   const handleExpandAllFrom = useCallback((personId: string) => {
@@ -499,6 +648,8 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
         sourceIds: [],
         flagIds: [],
         familyGedcomXref: null,
+        assertedBy: 'local_user',
+        assertedAt: new Date(),
         createdAt: new Date(),
       };
       dispatch({ type: 'ADD_EDGE', edge });
@@ -530,8 +681,8 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
   }, [layoutData, orientation]);
 
   const viewportBounds = useMemo(() => {
-    const width = 800;
-    const height = 600;
+    const width = svgRef.current?.clientWidth ?? 800;
+    const height = svgRef.current?.clientHeight ?? 600;
     return {
       x: -transform.x / transform.k,
       y: -transform.y / transform.k,
@@ -555,7 +706,7 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-1">
       <TreeControls
         graph={graph}
         rootPersonId={rootPersonId}
@@ -568,6 +719,8 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
         onVisibleTiersChange={setVisibleTiers}
         showRejected={showRejected}
         onShowRejectedChange={setShowRejected}
+        showSiblings={showSiblings}
+        onShowSiblingsChange={setShowSiblings}
         density={density}
         onDensityChange={setDensity}
         orientation={orientation}
@@ -578,10 +731,46 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
         onZoomOut={handleZoomOut}
         onFitToView={handleFitToView}
         onCenterOnSelected={handleCenterOnSelected}
+        expandedCount={expandedAncestors.size}
+        onCollapseAll={handleCollapseAll}
+        mapColorMode={mapColorMode}
+        onMapColorModeChange={setMapColorMode}
+        mapLayerMode={mapLayerMode}
+        onMapLayerModeChange={setMapLayerMode}
+        mapTimeRange={mapTimeRange}
+        onMapTimeRangeChange={setMapTimeRange}
+        mapIsPlaying={mapIsPlaying}
+        onMapPlayPauseToggle={handleMapPlayPauseToggle}
+        mapYearBounds={mapYearBounds}
       />
 
-      <div className="relative border border-border rounded-lg overflow-hidden" style={{ height: '70vh' }}>
-        {viewMode === 'fan' ? (
+      <div className="relative border border-border rounded-lg overflow-hidden" style={{ height: 'calc(100vh - 140px)' }}>
+        {viewMode === 'network' ? (
+          <NetworkMapView
+            ref={networkMapRef}
+            graph={graph}
+            rootPersonId={rootPersonId}
+            selectedPersonId={selectedPersonId}
+            onSelectPerson={onSelectPerson}
+            visibleTiers={visibleTiers}
+            showRejected={showRejected}
+            onReRoot={setRootPersonId}
+          />
+        ) : viewMode === 'map' ? (
+          <GeoMapView
+            ref={geoMapRef}
+            graph={graph}
+            rootPersonId={rootPersonId}
+            selectedPersonId={selectedPersonId}
+            onSelectPerson={onSelectPerson}
+            visibleTiers={visibleTiers}
+            showRejected={showRejected}
+            colorMode={mapColorMode}
+            layerMode={mapLayerMode}
+            timeRange={mapTimeRange}
+            onYearBoundsComputed={setMapYearBounds}
+          />
+        ) : viewMode === 'fan' ? (
           <FanChartView
             ref={fanChartRef}
             graph={graph}
@@ -615,8 +804,10 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
             maxGenerations={maxGenerations}
             visibleTiers={visibleTiers}
             showRejected={showRejected}
+            showSiblings={showSiblings}
             expandedAncestors={expandedAncestors}
             onExpandAncestor={handleExpandAncestor}
+            onCollapseAncestor={handleCollapseAncestor}
             onExpandAllFrom={handleExpandAllFrom}
             onAddPerson={handleGridAddPerson}
             onReRoot={setRootPersonId}
@@ -679,6 +870,8 @@ export function TreeNavigator({ graph, selectedPersonId, onSelectPerson, expandT
                     isOnHighlightPath={highlightPath.has(node.data.person.id)}
                     isHighlightActive={isHighlightActive}
                     onExpand={handleExpand}
+                    onCollapse={handleCollapseAncestor}
+                    isExpanded={expandedAncestors.has(node.data.person.id)}
                     orientation={orientation}
                   />
                 ))}
